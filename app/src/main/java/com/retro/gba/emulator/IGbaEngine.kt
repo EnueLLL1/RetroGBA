@@ -11,6 +11,8 @@ interface IGbaEngine {
     val isRunning: Boolean
     val isPaused: Boolean
     val isSimulationMode: Boolean
+    var frameskip: Int
+    val currentFps: Int
 
     /**
      * Carrega os bytes binários da ROM e dados persistentes de save (SRAM/Flash/EEPROM).

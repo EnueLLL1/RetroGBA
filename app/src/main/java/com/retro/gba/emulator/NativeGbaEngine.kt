@@ -40,7 +40,10 @@ class NativeGbaEngine(
     override val isSimulationMode: Boolean = false
     override val isRunning: Boolean get() = _isRunning.get()
     override val isPaused: Boolean get() = _isPaused.get()
+    override var frameskip: Int = 0
+    override val currentFps: Int get() = _currentFps.get()
 
+    private val _currentFps = java.util.concurrent.atomic.AtomicInteger(60)
     private val _isRunning = AtomicBoolean(false)
     private val _isPaused = AtomicBoolean(false)
     private var emulationJob: Job? = null
@@ -120,6 +123,9 @@ class NativeGbaEngine(
 
         emulationJob = CoroutineScope(Dispatchers.Default).launch {
             val frameTimeNs = (1_000_000_000.0 / GBA_FPS).toLong()
+            var frameCounter = 0L
+            var fpsFramesCount = 0
+            var lastFpsCalcTime = System.currentTimeMillis()
 
             while (_isRunning.get()) {
                 if (!_isPaused.get()) {
@@ -127,17 +133,22 @@ class NativeGbaEngine(
 
                     // 1. Executa instruções ARM7TDMI e rasterização PPU/APU para 1 frame + rcheevos
                     nativeRunFrame()
+                    frameCounter++
 
-                    // 2. Renderização de vídeo via DirectBuffer com alternância de double-buffering
-                    directVideoBuffer?.let { buffer ->
-                        buffer.rewind()
-                        val bmp = frameBuffers[activeBufferIndex]
-                        activeBufferIndex = 1 - activeBufferIndex
+                    // 2. Renderização de vídeo via DirectBuffer com alternância de double-buffering e frameskip
+                    val shouldRenderVideo = (frameskip <= 0) || (frameCounter % (frameskip + 1) == 0L)
+                    if (shouldRenderVideo) {
+                        directVideoBuffer?.let { buffer ->
+                            buffer.rewind()
+                            val bmp = frameBuffers[activeBufferIndex]
+                            activeBufferIndex = 1 - activeBufferIndex
 
-                        if (bmp != null) {
-                            bmp.copyPixelsFromBuffer(buffer)
-                            onFrameReady(bmp)
+                            if (bmp != null) {
+                                bmp.copyPixelsFromBuffer(buffer)
+                                onFrameReady(bmp)
+                            }
                         }
+                        fpsFramesCount++
                     }
 
                     // 3. Drena amostras de áudio PCM sintetizadas e envia ao AudioTrack
@@ -158,7 +169,15 @@ class NativeGbaEngine(
                         }
                     }
 
-                    // 5. Temporização precisa baseada em nanosegundos
+                    // 5. Atualização periódica da taxa de quadros (FPS) a cada segundo
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs - lastFpsCalcTime >= 1000L) {
+                        _currentFps.set(fpsFramesCount)
+                        fpsFramesCount = 0
+                        lastFpsCalcTime = nowMs
+                    }
+
+                    // 6. Temporização precisa baseada em nanosegundos
                     val elapsedNs = System.nanoTime() - frameStartNs
                     val targetNs = (frameTimeNs / speedMultiplier).toLong()
                     val sleepNs = targetNs - elapsedNs
@@ -167,7 +186,7 @@ class NativeGbaEngine(
                         delay(sleepNs / 1_000_000L)
                     }
                 } else {
-                    delay(50)
+                    delay(100)
                 }
             }
         }

@@ -27,6 +27,8 @@ class SimulationGbaEngine(
     override val isSimulationMode: Boolean = true
     override val isRunning: Boolean get() = _isRunning.get()
     override val isPaused: Boolean get() = _isPaused.get()
+    override var frameskip: Int = 0
+    override val currentFps: Int get() = 60
 
     private val _isRunning = AtomicBoolean(false)
     private val _isPaused = AtomicBoolean(false)

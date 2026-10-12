@@ -28,6 +28,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     private val romRepo = RomRepository(application)
     val saveRepository = SaveRepository(application)
     val cheatRepository = com.retro.gba.data.repository.CheatRepository(application)
+    val powerManager = com.retro.gba.performance.PowerProfileManager(application)
 
     private val _currentFrame = MutableStateFlow<Bitmap?>(null)
     val currentFrame: StateFlow<Bitmap?> = _currentFrame.asStateFlow()
@@ -46,6 +47,12 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     private val _isTurboActive = MutableStateFlow(false)
     val isTurboActive: StateFlow<Boolean> = _isTurboActive.asStateFlow()
+
+    private val _isEcoMode = MutableStateFlow(false)
+    val isEcoMode: StateFlow<Boolean> = _isEcoMode.asStateFlow()
+
+    private val _currentFps = MutableStateFlow(60)
+    val currentFps: StateFlow<Int> = _currentFps.asStateFlow()
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
@@ -85,6 +92,42 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     private val _isSimulationMode = MutableStateFlow(engine.isSimulationMode)
     val isSimulationMode: StateFlow<Boolean> = _isSimulationMode.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            while (true) {
+                delay(1000)
+                if (gbaCore.isRunning && !gbaCore.isPaused) {
+                    _currentFps.value = gbaCore.currentFps
+                    updateFrameskip()
+                }
+            }
+        }
+    }
+
+    fun setEcoMode(enabled: Boolean) {
+        _isEcoMode.value = enabled
+        updateFrameskip()
+        _statusMessage.value = if (enabled) "Modo Eco de Bateria ativado (Frameskip adaptativo)" else "Modo Eco desativado (60 FPS pleno)"
+    }
+
+    fun updateFrameskip() {
+        val recommended = powerManager.calculateRecommendedFrameskip(_isEcoMode.value)
+        gbaCore.frameskip = recommended
+    }
+
+    fun onAppPause() {
+        if (gbaCore.isRunning && !gbaCore.isPaused) {
+            gbaCore.pause()
+        }
+    }
+
+    fun onAppResume() {
+        if (gbaCore.isRunning && gbaCore.isPaused) {
+            gbaCore.resume()
+            updateFrameskip()
+        }
+    }
 
     fun loadRomFromUri(uri: Uri, fileName: String) {
         viewModelScope.launch {

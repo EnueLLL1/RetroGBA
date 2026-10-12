@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.retro.gba.ui.components.AchievementOverlay
 import com.retro.gba.ui.components.GbaScreenCanvas
 import com.retro.gba.ui.components.VirtualController
@@ -41,8 +44,25 @@ fun EmulatorScreen(
     val controllerOpacity by viewModel.controllerOpacity.collectAsState()
     val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsState()
     val fastForwardSpeed by viewModel.fastForwardSpeed.collectAsState()
+    val isEcoMode by viewModel.isEcoMode.collectAsState()
+    val currentFps by viewModel.currentFps.collectAsState()
     val cheats by viewModel.cheats.collectAsState()
     val isHardcore = viewModel.raRepository.isHardcore()
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> viewModel.onAppPause()
+                Lifecycle.Event.ON_RESUME -> viewModel.onAppResume()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     var showMenuSheet by remember { mutableStateOf(false) }
     var showAddCheatDialog by remember { mutableStateOf(false) }
@@ -73,7 +93,7 @@ fun EmulatorScreen(
                 verticalArrangement = Arrangement.SpaceBetween,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Barra superior de status do jogo
+                // Barra superior de status do jogo & Telemetria de Performance
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -107,13 +127,47 @@ fun EmulatorScreen(
                         }
                     }
 
-                    if (isTurbo) {
-                        Text(
-                            text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
-                            color = GbaSecondary,
-                            fontSize = 11.sp,
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Telemetria de FPS
+                        Surface(
+                            color = Color(0xFF1B192A),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "$currentFps FPS",
+                                color = if (currentFps >= 50) Color(0xFF81C784) else Color(0xFFFFB74D),
+                                fontSize = 10.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        if (isEcoMode) {
+                            Surface(
+                                color = Color(0xFF1B3B24),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "🍃 ECO",
+                                    color = Color(0xFFA5D6A7),
+                                    fontSize = 10.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (isTurbo) {
+                            Text(
+                                text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
+                                color = GbaSecondary,
+                                fontSize = 11.sp,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
                 }
 
@@ -334,6 +388,30 @@ fun EmulatorScreen(
                                     )
                                 }
                             }
+                        }
+
+                        // Switch de Economia de Bateria (Modo Eco)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Modo Eco de Bateria (Frameskip)",
+                                    fontSize = 13.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Reduz carga gráfica e aquecimento para partidas longas",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = isEcoMode,
+                                onCheckedChange = { viewModel.setEcoMode(it) }
+                            )
                         }
 
                         HorizontalDivider(color = Color.DarkGray)
