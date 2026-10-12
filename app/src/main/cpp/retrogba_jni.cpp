@@ -153,8 +153,9 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeInit(JNIEnv* /* env */, jobjec
 
 JNIEXPORT jboolean JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadRom(JNIEnv* env, jobject /* thiz */, jbyteArray romBytes, jint size) {
-    if (romBytes == nullptr || size < 192) {
-        LOGE("ROM inválida ou truncada (tamanho < 192 bytes)");
+    static constexpr jint MAX_ROM_SIZE = 64 * 1024 * 1024; // 64 MB
+    if (romBytes == nullptr || size < 192 || size > MAX_ROM_SIZE) {
+        LOGE("ROM inválida ou fora dos limites de segurança (192 bytes a 64MB, recebido: %d)", size);
         return JNI_FALSE;
     }
 
@@ -261,6 +262,12 @@ JNIEXPORT jboolean JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeActivateAchievement(JNIEnv* env, jobject /* thiz */, jlong id, jstring memaddr) {
     if (!s_rcInitialized || memaddr == nullptr) return JNI_FALSE;
 
+    jsize strLen = env->GetStringLength(memaddr);
+    if (strLen == 0 || strLen > 4096) {
+        LOGE("rcheevos: Parâmetro memaddr inválido ou excede 4096 caracteres");
+        return JNI_FALSE;
+    }
+
     const char* str = env->GetStringUTFChars(memaddr, nullptr);
     if (str == nullptr) return JNI_FALSE;
 
@@ -331,7 +338,8 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadSaveRam(JNIEnv* env, jobje
     if (s_core == nullptr || !s_isLoaded || saveBytes == nullptr) return JNI_FALSE;
 
     jsize len = env->GetArrayLength(saveBytes);
-    if (len == 0) return JNI_FALSE;
+    static constexpr jsize MAX_SAVE_RAM_SIZE = 1024 * 1024; // 1 MB
+    if (len == 0 || len > MAX_SAVE_RAM_SIZE) return JNI_FALSE;
 
     std::vector<uint8_t> buffer(len);
     env->GetByteArrayRegion(saveBytes, 0, len, reinterpret_cast<jbyte*>(buffer.data()));
@@ -370,7 +378,8 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadState(JNIEnv* env, jobject
     if (s_core == nullptr || !s_isLoaded || stateBytes == nullptr) return JNI_FALSE;
 
     jsize len = env->GetArrayLength(stateBytes);
-    if (len == 0) return JNI_FALSE;
+    static constexpr jsize MAX_STATE_SIZE = 8 * 1024 * 1024; // 8 MB
+    if (len == 0 || len > MAX_STATE_SIZE) return JNI_FALSE;
 
     std::vector<uint8_t> stateBuffer(len);
     env->GetByteArrayRegion(stateBytes, 0, len, reinterpret_cast<jbyte*>(stateBuffer.data()));

@@ -1,6 +1,7 @@
 package com.retro.gba.data.repository
 
 import android.content.Context
+import com.retro.gba.security.RomSecurityValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -15,7 +16,8 @@ data class SaveStateInfo(
 
 /**
  * Repositório responsável pela persistência atômica e recuperação de Save RAM (.sav)
- * e Save States (.ssX) com proteção contra corrupção de arquivos.
+ * e Save States (.ssX) com proteção contra corrupção de arquivos, Path Traversal
+ * e estouro de limites de armazenamento.
  */
 class SaveRepository(
     private val saveDirectory: File
@@ -29,12 +31,21 @@ class SaveRepository(
         }
     }
 
-    private fun getBatterySaveFile(romHash: String): File {
-        return File(saveDirectory, "${romHash.lowercase()}.sav")
+    private fun getBatterySaveFile(romHash: String): File? {
+        val sanitized = RomSecurityValidator.sanitizeHash(romHash)
+        if (sanitized.isEmpty()) return null
+
+        val target = File(saveDirectory, "$sanitized.sav")
+        return if (RomSecurityValidator.isPathConfined(saveDirectory, target)) target else null
     }
 
-    private fun getStateFile(romHash: String, slot: Int): File {
-        return File(saveDirectory, "${romHash.lowercase()}.ss$slot")
+    private fun getStateFile(romHash: String, slot: Int): File? {
+        if (slot !in 0..9) return null
+        val sanitized = RomSecurityValidator.sanitizeHash(romHash)
+        if (sanitized.isEmpty()) return null
+
+        val target = File(saveDirectory, "$sanitized.ss$slot")
+        return if (RomSecurityValidator.isPathConfined(saveDirectory, target)) target else null
     }
 
     /**
@@ -42,9 +53,11 @@ class SaveRepository(
      * Grava primeiramente em arquivo .tmp e realiza renomeação atômica no sistema de arquivos.
      */
     suspend fun saveBatteryRam(romHash: String, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        if (romHash.isBlank() || data.isEmpty()) return@withContext false
+        if (data.isEmpty() || data.size > RomSecurityValidator.MAX_SAVE_RAM_SIZE_BYTES) {
+            return@withContext false
+        }
 
-        val targetFile = getBatterySaveFile(romHash)
+        val targetFile = getBatterySaveFile(romHash) ?: return@withContext false
         val tempFile = File(saveDirectory, "${targetFile.name}.tmp")
 
         try {
@@ -63,9 +76,9 @@ class SaveRepository(
      * Carrega a Save RAM salva anteriormente em disco para a ROM especificada.
      */
     suspend fun loadBatteryRam(romHash: String): ByteArray? = withContext(Dispatchers.IO) {
-        if (romHash.isBlank()) return@withContext null
-        val file = getBatterySaveFile(romHash)
+        val file = getBatterySaveFile(romHash) ?: return@withContext null
         if (!file.exists() || !file.canRead() || file.length() == 0L) return@withContext null
+        if (file.length() > RomSecurityValidator.MAX_SAVE_RAM_SIZE_BYTES) return@withContext null
 
         try {
             file.readBytes()
@@ -75,7 +88,7 @@ class SaveRepository(
     }
 
     suspend fun hasBatteryRam(romHash: String): Boolean = withContext(Dispatchers.IO) {
-        val file = getBatterySaveFile(romHash)
+        val file = getBatterySaveFile(romHash) ?: return@withContext false
         file.exists() && file.length() > 0L
     }
 
@@ -83,9 +96,11 @@ class SaveRepository(
      * Salva o estado instantâneo (Save State) em um determinado slot de forma atômica.
      */
     suspend fun saveState(romHash: String, slot: Int, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        if (romHash.isBlank() || slot < 0 || data.isEmpty()) return@withContext false
+        if (data.isEmpty() || data.size > RomSecurityValidator.MAX_SAVE_STATE_SIZE_BYTES) {
+            return@withContext false
+        }
 
-        val targetFile = getStateFile(romHash, slot)
+        val targetFile = getStateFile(romHash, slot) ?: return@withContext false
         val tempFile = File(saveDirectory, "${targetFile.name}.tmp")
 
         try {
@@ -104,9 +119,9 @@ class SaveRepository(
      * Carrega os dados de Save State para restauração no core.
      */
     suspend fun loadState(romHash: String, slot: Int): ByteArray? = withContext(Dispatchers.IO) {
-        if (romHash.isBlank() || slot < 0) return@withContext null
-        val file = getStateFile(romHash, slot)
+        val file = getStateFile(romHash, slot) ?: return@withContext null
         if (!file.exists() || !file.canRead() || file.length() == 0L) return@withContext null
+        if (file.length() > RomSecurityValidator.MAX_SAVE_STATE_SIZE_BYTES) return@withContext null
 
         try {
             file.readBytes()
@@ -119,9 +134,10 @@ class SaveRepository(
      * Lista todos os slots de Save State configuráveis para a ROM.
      */
     suspend fun listStateSlots(romHash: String, maxSlots: Int = 5): List<SaveStateInfo> = withContext(Dispatchers.IO) {
-        (0 until maxSlots).map { slot ->
+        val boundedMax = maxSlots.coerceIn(1, 10)
+        (0 until boundedMax).map { slot ->
             val file = getStateFile(romHash, slot)
-            if (file.exists() && file.length() > 0L) {
+            if (file != null && file.exists() && file.length() > 0L) {
                 SaveStateInfo(
                     slot = slot,
                     exists = true,
@@ -135,7 +151,7 @@ class SaveRepository(
     }
 
     suspend fun deleteState(romHash: String, slot: Int): Boolean = withContext(Dispatchers.IO) {
-        val file = getStateFile(romHash, slot)
+        val file = getStateFile(romHash, slot) ?: return@withContext false
         if (file.exists()) file.delete() else false
     }
 }

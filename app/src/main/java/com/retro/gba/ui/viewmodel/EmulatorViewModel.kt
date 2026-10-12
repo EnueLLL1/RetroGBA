@@ -75,6 +75,12 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _statusMessage.value = "Identificando ROM no RetroAchievements..."
             val romBytes = romRepo.readRomBytes(uri)
+            val validation = com.retro.gba.security.RomSecurityValidator.validateRomBytes(romBytes)
+            if (validation is com.retro.gba.security.RomSecurityValidator.ValidationResult.Invalid) {
+                _statusMessage.value = "Arquivo inválido: ${validation.reason}"
+                return@launch
+            }
+
             val parseResult = romRepo.parseRom(uri, fileName)
 
             parseResult.onSuccess { romItem ->

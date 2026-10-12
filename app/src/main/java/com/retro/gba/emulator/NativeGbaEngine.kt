@@ -74,7 +74,10 @@ class NativeGbaEngine(
 
     override fun loadRom(romBytes: ByteArray, achievements: List<Achievement>, saveBytes: ByteArray?): Boolean {
         if (!isNativeLibLoaded) return false
-        if (romBytes.isEmpty()) return false
+        val validation = com.retro.gba.security.RomSecurityValidator.validateRomBytes(romBytes)
+        if (validation is com.retro.gba.security.RomSecurityValidator.ValidationResult.Invalid) {
+            return false
+        }
 
         val loaded = nativeLoadRom(romBytes, romBytes.size)
         if (!loaded) return false

@@ -18,9 +18,7 @@ class RetroAchievementsApi {
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        })
+        .addInterceptor(com.retro.gba.security.NetworkSecurityInterceptor(enableLogging = true))
         .build()
 
     private val gson = Gson()
