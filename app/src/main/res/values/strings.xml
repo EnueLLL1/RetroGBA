@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">RetroGBA</string>
+    <string name="tab_library">Biblioteca</string>
+    <string name="tab_achievements">Conquistas</string>
+    <string name="tab_profile">Perfil</string>
+    <string name="tab_settings">Ajustes</string>
+
+    <string name="retroachievements">RetroAchievements</string>
+    <string name="login_title">Conectar ao RetroAchievements</string>
+    <string name="username">Nome de Usuário</string>
+    <string name="password_or_token">Senha ou Web API Key</string>
+    <string name="login_button">Entrar</string>
+    <string name="logout_button">Desconectar</string>
+    <string name="logged_as">Conectado como</string>
+    <string name="hardcore_mode">Modo Hardcore</string>
+    <string name="hardcore_desc">Desativa cheats, save states e rewind para validar conquistas oficiais no ranking.</string>
+
+    <string name="load_rom">Carregar Jogo (.gba)</string>
+    <string name="no_roms">Nenhuma ROM encontrada. Clique em \'Carregar Jogo\' para selecionar uma ROM de Game Boy Advance (.gba ou .zip).</string>
+    <string name="save_state">Salvar Estado</string>
+    <string name="load_state">Carregar Estado</string>
+    <string name="fast_forward">Avanço Rápido (Turbo)</string>
+    <string name="reset_game">Reiniciar Jogo</string>
+    <string name="exit_game">Sair para o Menu</string>
+
+    <string name="achievement_unlocked">Conquista Desbloqueada!</string>
+</resources>
+

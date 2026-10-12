@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.RetroGBA" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#12111A</item>
+        <item name="android:navigationBarColor">#12111A</item>
+        <item name="android:windowBackground">#12111A</item>
+    </style>
+</resources>
+

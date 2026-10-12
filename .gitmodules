@@ -1,0 +1,6 @@
+[submodule "app/src/main/cpp/mgba"]
+	path = app/src/main/cpp/mgba
+	url = https://github.com/mgba-emu/mgba.git
+[submodule "app/src/main/cpp/rcheevos"]
+	path = app/src/main/cpp/rcheevos
+	url = https://github.com/RetroAchievements/rcheevos.git
