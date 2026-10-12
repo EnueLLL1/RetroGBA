@@ -67,4 +67,19 @@ interface IGbaEngine {
      * Lê endereço de memória emulado para inspeção do RetroAchievements.
      */
     fun readMemory(address: Long, size: Int): Long
+
+    /**
+     * Adiciona código de trapaça (GameShark, Action Replay, CodeBreaker).
+     */
+    fun addCheat(description: String, code: String, type: Int = 0, enabled: Boolean = true): Boolean
+
+    /**
+     * Remove todos os códigos de trapaça ativos.
+     */
+    fun clearCheats()
+
+    /**
+     * Altera o estado (ativo/inativo) de um cheat registrado.
+     */
+    fun setCheatEnabled(index: Int, enabled: Boolean)
 }

@@ -41,8 +41,14 @@ fun EmulatorScreen(
     val controllerOpacity by viewModel.controllerOpacity.collectAsState()
     val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsState()
     val fastForwardSpeed by viewModel.fastForwardSpeed.collectAsState()
+    val cheats by viewModel.cheats.collectAsState()
+    val isHardcore = viewModel.raRepository.isHardcore()
 
     var showMenuSheet by remember { mutableStateOf(false) }
+    var showAddCheatDialog by remember { mutableStateOf(false) }
+    var cheatDesc by remember { mutableStateOf("") }
+    var cheatCodeText by remember { mutableStateOf("") }
+    var cheatTypeSelected by remember { mutableStateOf(com.retro.gba.data.model.CheatType.AUTODETECT) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -332,6 +338,112 @@ fun EmulatorScreen(
 
                         HorizontalDivider(color = Color.DarkGray)
 
+                        // Seção de Códigos de Trapaça (Cheats)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Códigos de Trapaça (Cheats)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White
+                            )
+                            if (!isHardcore) {
+                                TextButton(onClick = { showAddCheatDialog = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Novo Cheat", fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        if (isHardcore) {
+                            Surface(
+                                color = Color(0xFF442A12),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFFB74D),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "Modo Hardcore ativo: O uso de cheats é bloqueado para manter a integridade dos troféus no RetroAchievements.",
+                                        color = Color(0xFFFFE0B2),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            if (cheats.isEmpty()) {
+                                Text(
+                                    text = "Nenhum cheat cadastrado. Clique em 'Novo Cheat' para inserir códigos GameShark, Action Replay ou CodeBreaker.",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    cheats.forEach { cheat ->
+                                        Surface(
+                                            color = Color(0xFF26203D),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = cheat.description,
+                                                        color = Color.White,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "${cheat.type.displayName} • ${cheat.code.replace("\n", " ")}",
+                                                        color = Color.LightGray,
+                                                        fontSize = 10.sp,
+                                                        maxLines = 1
+                                                    )
+                                                }
+
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Switch(
+                                                        checked = cheat.isEnabled,
+                                                        onCheckedChange = { viewModel.toggleCheat(cheat.id) },
+                                                        modifier = Modifier.height(24.dp)
+                                                    )
+                                                    IconButton(
+                                                        onClick = { viewModel.removeCheat(cheat.id) },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Delete,
+                                                            contentDescription = "Remover",
+                                                            tint = Color.Gray,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = Color.DarkGray)
+
                         // Ver conquistas
                         Button(
                             onClick = {
@@ -354,6 +466,89 @@ fun EmulatorScreen(
                         }
                     }
                 }
+            }
+
+            // Diálogo Modal para Inserir Novo Cheat
+            if (showAddCheatDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAddCheatDialog = false },
+                    title = {
+                        Text(
+                            text = "Adicionar Código de Cheat",
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = Color.White
+                        )
+                    },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = cheatDesc,
+                                onValueChange = { cheatDesc = it },
+                                label = { Text("Descrição (ex: Dinheiro Máximo)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            OutlinedTextField(
+                                value = cheatCodeText,
+                                onValueChange = { cheatCodeText = it },
+                                label = { Text("Código (ex: 82003884 0063)") },
+                                placeholder = { Text("Insira os dígitos hexadecimais") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2,
+                                maxLines = 4
+                            )
+
+                            Text(
+                                text = "Tipo de Código:",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    com.retro.gba.data.model.CheatType.AUTODETECT,
+                                    com.retro.gba.data.model.CheatType.GAMESHARK,
+                                    com.retro.gba.data.model.CheatType.PRO_ACTION_REPLAY
+                                ).forEach { type ->
+                                    FilterChip(
+                                        selected = cheatTypeSelected == type,
+                                        onClick = { cheatTypeSelected = type },
+                                        label = { Text(type.displayName, fontSize = 11.sp) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (cheatCodeText.isNotBlank()) {
+                                    viewModel.addCheat(cheatDesc, cheatCodeText, cheatTypeSelected)
+                                    cheatDesc = ""
+                                    cheatCodeText = ""
+                                    showAddCheatDialog = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GbaSecondary)
+                        ) {
+                            Text("Salvar Cheat", color = Color.Black, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showAddCheatDialog = false }) {
+                            Text("Cancelar", color = Color.LightGray)
+                        }
+                    },
+                    containerColor = Color(0xFF1E1A2E)
+                )
             }
         }
     }

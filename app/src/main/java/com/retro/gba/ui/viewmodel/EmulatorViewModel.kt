@@ -27,6 +27,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     val raRepository = RetroAchievementsRepository(raApi, userPrefs)
     private val romRepo = RomRepository(application)
     val saveRepository = SaveRepository(application)
+    val cheatRepository = com.retro.gba.data.repository.CheatRepository(application)
 
     private val _currentFrame = MutableStateFlow<Bitmap?>(null)
     val currentFrame: StateFlow<Bitmap?> = _currentFrame.asStateFlow()
@@ -36,6 +37,9 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     private val _achievements = MutableStateFlow<List<Achievement>>(emptyList())
     val achievements: StateFlow<List<Achievement>> = _achievements.asStateFlow()
+
+    private val _cheats = MutableStateFlow<List<com.retro.gba.data.model.CheatCode>>(emptyList())
+    val cheats: StateFlow<List<com.retro.gba.data.model.CheatCode>> = _cheats.asStateFlow()
 
     private val _recentUnlockedAchievement = MutableStateFlow<Achievement?>(null)
     val recentUnlockedAchievement: StateFlow<Achievement?> = _recentUnlockedAchievement.asStateFlow()
@@ -125,9 +129,16 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 // 3. Atualizar slots de save states
                 refreshSaveSlots()
 
-                // 4. Iniciar motor de emulação com os bytes da ROM e o Save RAM
+                // 4. Carregar Cheats configurados para a ROM
+                val savedCheats = cheatRepository.loadCheats(md5)
+                _cheats.value = savedCheats
+
+                // 5. Iniciar motor de emulação com os bytes da ROM e o Save RAM
                 val finalRom = if (romBytes.isNotEmpty()) romBytes else ByteArray(1024)
                 gbaCore.loadRom(finalRom, gameAchievements, existingSave)
+                if (!userPrefs.isHardcoreMode) {
+                    applyCheatsToEngine(savedCheats)
+                }
                 gbaCore.start()
             }.onFailure {
                 _statusMessage.value = "Erro ao carregar ROM: ${it.localizedMessage}"
@@ -257,6 +268,79 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     fun clearStatusMessage() {
         _statusMessage.value = null
+    }
+
+    private fun applyCheatsToEngine(cheatList: List<com.retro.gba.data.model.CheatCode>) {
+        gbaCore.clearCheats()
+        if (userPrefs.isHardcoreMode) return
+
+        cheatList.filter { it.isEnabled }.forEach { cheat ->
+            gbaCore.addCheat(cheat.description, cheat.code, cheat.type.typeId, true)
+        }
+    }
+
+    fun addCheat(
+        description: String,
+        code: String,
+        type: com.retro.gba.data.model.CheatType = com.retro.gba.data.model.CheatType.AUTODETECT
+    ) {
+        if (userPrefs.isHardcoreMode) {
+            _statusMessage.value = "Cheats desativados no Modo Hardcore do RetroAchievements!"
+            return
+        }
+        if (code.isBlank()) {
+            _statusMessage.value = "O código do cheat não pode estar vazio."
+            return
+        }
+        val hash = currentRomHash
+        if (hash == null) {
+            _statusMessage.value = "Nenhum jogo ativo para vincular o cheat."
+            return
+        }
+
+        val newCheat = com.retro.gba.data.model.CheatCode(
+            description = description.ifBlank { "Trapaça" },
+            code = code.trim(),
+            type = type,
+            isEnabled = true
+        )
+        val updated = _cheats.value + newCheat
+        _cheats.value = updated
+
+        viewModelScope.launch {
+            cheatRepository.saveCheats(hash, updated)
+            applyCheatsToEngine(updated)
+            _statusMessage.value = "Cheat '${newCheat.description}' ativado com sucesso!"
+        }
+    }
+
+    fun toggleCheat(cheatId: String) {
+        if (userPrefs.isHardcoreMode) {
+            _statusMessage.value = "Cheats desativados no Modo Hardcore do RetroAchievements!"
+            return
+        }
+        val hash = currentRomHash ?: return
+        val updated = _cheats.value.map {
+            if (it.id == cheatId) it.copy(isEnabled = !it.isEnabled) else it
+        }
+        _cheats.value = updated
+
+        viewModelScope.launch {
+            cheatRepository.saveCheats(hash, updated)
+            applyCheatsToEngine(updated)
+        }
+    }
+
+    fun removeCheat(cheatId: String) {
+        val hash = currentRomHash ?: return
+        val updated = _cheats.value.filter { it.id != cheatId }
+        _cheats.value = updated
+
+        viewModelScope.launch {
+            cheatRepository.saveCheats(hash, updated)
+            applyCheatsToEngine(updated)
+            _statusMessage.value = "Cheat removido."
+        }
     }
 
     override fun onCleared() {

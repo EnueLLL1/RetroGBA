@@ -181,6 +181,14 @@ class SimulationGbaEngine(
         }
     }
 
+    override fun addCheat(description: String, code: String, type: Int, enabled: Boolean): Boolean {
+        return true
+    }
+
+    override fun clearCheats() {}
+
+    override fun setCheatEnabled(index: Int, enabled: Boolean) {}
+
     private fun runFrame(frameCount: Long) {
         // Atualiza chave de controle
         memory.write8(0x04000130L, currentButtons and 0xFF)

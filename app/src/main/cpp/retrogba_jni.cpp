@@ -8,8 +8,10 @@
 
 // Headers do núcleo mGBA em C puro
 #include <mgba/core/core.h>
+#include <mgba/core/cheats.h>
 #include <mgba/gba/core.h>
 #include <mgba/gba/interface.h>
+#include <mgba/internal/gba/cheats.h>
 #include <mgba-util/vfs.h>
 
 // Headers da biblioteca oficial rcheevos (RetroAchievements em C)
@@ -409,6 +411,110 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeReadMemory(JNIEnv* /* env */, 
     return 0;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_retro_gba_emulator_NativeGbaEngine_nativeAddCheat(JNIEnv* env, jobject /* thiz */, jstring description, jstring code, jint type, jboolean enabled) {
+    if (s_core == nullptr || !s_isLoaded || code == nullptr) return JNI_FALSE;
+
+    struct mCheatDevice* dev = s_core->cheatDevice(s_core);
+    if (dev == nullptr) {
+        LOGE("mGBA: cheatDevice não inicializado no core");
+        return JNI_FALSE;
+    }
+
+    const char* descStr = description != nullptr ? env->GetStringUTFChars(description, nullptr) : "Cheat";
+    const char* codeStr = env->GetStringUTFChars(code, nullptr);
+
+    if (codeStr == nullptr) {
+        if (description != nullptr && descStr != nullptr) env->ReleaseStringUTFChars(description, descStr);
+        return JNI_FALSE;
+    }
+
+    struct mCheatSet* set = dev->createSet(dev, descStr);
+    if (set == nullptr) {
+        LOGE("mGBA: Falha ao criar mCheatSet para '%s'", descStr);
+        env->ReleaseStringUTFChars(code, codeStr);
+        if (description != nullptr) env->ReleaseStringUTFChars(description, descStr);
+        return JNI_FALSE;
+    }
+
+    set->enabled = (enabled == JNI_TRUE);
+
+    int mgbaType = 0;
+    if (type == 1) mgbaType = GBA_CHEAT_GAMESHARK;
+    else if (type == 2) mgbaType = GBA_CHEAT_PRO_ACTION_REPLAY;
+    else if (type == 3) mgbaType = GBA_CHEAT_CODEBREAKER;
+    else if (type == 4) mgbaType = GBA_CHEAT_VBA;
+
+    std::string fullCode(codeStr);
+    std::vector<std::string> lines;
+    size_t start = 0;
+    for (size_t i = 0; i <= fullCode.length(); ++i) {
+        if (i == fullCode.length() || fullCode[i] == '\n' || fullCode[i] == '\r' || fullCode[i] == ';') {
+            if (i > start) {
+                std::string line = fullCode.substr(start, i - start);
+                line.erase(0, line.find_first_not_of(" \t"));
+                line.erase(line.find_last_not_of(" \t") + 1);
+                if (!line.empty()) {
+                    lines.push_back(line);
+                }
+            }
+            start = i + 1;
+        }
+    }
+
+    bool allLinesAdded = true;
+    for (const auto& line : lines) {
+        if (!mCheatAddLine(set, line.c_str(), mgbaType)) {
+            if (mgbaType != 0 && mCheatAddLine(set, line.c_str(), 0)) {
+                // Sucesso no fallback de autodeteção
+            } else {
+                allLinesAdded = false;
+                LOGE("mGBA: Código de cheat rejeitado: '%s'", line.c_str());
+            }
+        }
+    }
+
+    if (allLinesAdded && !lines.empty()) {
+        mCheatAddSet(dev, set);
+        mCheatRefresh(dev, set);
+        LOGI("mGBA: Cheat '%s' registrado com sucesso (%zu linhas, ativo=%d)", descStr, lines.size(), set->enabled);
+    } else {
+        set->deinit(set);
+        free(set);
+    }
+
+    env->ReleaseStringUTFChars(code, codeStr);
+    if (description != nullptr) env->ReleaseStringUTFChars(description, descStr);
+
+    return allLinesAdded ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_retro_gba_emulator_NativeGbaEngine_nativeClearCheats(JNIEnv* /* env */, jobject /* thiz */) {
+    if (s_core != nullptr) {
+        struct mCheatDevice* dev = s_core->cheatDevice(s_core);
+        if (dev != nullptr) {
+            mCheatDeviceClear(dev);
+            LOGI("mGBA: Todos os cheats limpos.");
+        }
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_retro_gba_emulator_NativeGbaEngine_nativeSetCheatEnabled(JNIEnv* /* env */, jobject /* thiz */, jint index, jboolean enabled) {
+    if (s_core != nullptr && index >= 0) {
+        struct mCheatDevice* dev = s_core->cheatDevice(s_core);
+        if (dev != nullptr && static_cast<size_t>(index) < mCheatSetsSize(&dev->cheats)) {
+            struct mCheatSet* set = *mCheatSetsGetPointer(&dev->cheats, static_cast<size_t>(index));
+            if (set != nullptr) {
+                set->enabled = (enabled == JNI_TRUE);
+                mCheatRefresh(dev, set);
+                LOGI("mGBA: Cheat [%d] estado=%d", index, set->enabled);
+            }
+        }
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeDestroy(JNIEnv* env, jobject /* thiz */) {
     if (s_rcInitialized) {
@@ -418,6 +524,10 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeDestroy(JNIEnv* env, jobject /
     }
 
     if (s_core != nullptr) {
+        struct mCheatDevice* dev = s_core->cheatDevice(s_core);
+        if (dev != nullptr) {
+            mCheatDeviceClear(dev);
+        }
         s_core->deinit(s_core);
         s_core = nullptr;
     }
@@ -431,7 +541,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeDestroy(JNIEnv* env, jobject /
     s_audioWritePos = 0;
     s_audioReadPos = 0;
     s_isLoaded = false;
-    LOGI("RetroGba: Núcleo mGBA e rcheevos destruídos com sucesso.");
+    LOGI("RetroGba: Núcleo mGBA, cheats e rcheevos destruídos com sucesso.");
 }
 
 } // extern "C"

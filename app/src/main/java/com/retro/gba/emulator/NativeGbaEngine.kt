@@ -232,6 +232,23 @@ class NativeGbaEngine(
         return nativeReadMemory(address, size)
     }
 
+    override fun addCheat(description: String, code: String, type: Int, enabled: Boolean): Boolean {
+        if (!isNativeLibLoaded) return false
+        return nativeAddCheat(description, code, type, enabled)
+    }
+
+    override fun clearCheats() {
+        if (isNativeLibLoaded) {
+            nativeClearCheats()
+        }
+    }
+
+    override fun setCheatEnabled(index: Int, enabled: Boolean) {
+        if (isNativeLibLoaded) {
+            nativeSetCheatEnabled(index, enabled)
+        }
+    }
+
     // Declarações JNI nativas da ponte C++
     private external fun nativeLoadRom(romBytes: ByteArray, size: Int): Boolean
     private external fun nativeRunFrame()
@@ -248,5 +265,8 @@ class NativeGbaEngine(
     private external fun nativeSaveState(): ByteArray?
     private external fun nativeLoadState(stateBytes: ByteArray): Boolean
     private external fun nativeReadMemory(address: Long, size: Int): Long
+    private external fun nativeAddCheat(description: String, code: String, type: Int, enabled: Boolean): Boolean
+    private external fun nativeClearCheats()
+    private external fun nativeSetCheatEnabled(index: Int, enabled: Boolean)
     private external fun nativeDestroy()
 }
