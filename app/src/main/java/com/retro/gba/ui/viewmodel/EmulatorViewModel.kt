@@ -178,11 +178,15 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
                 // 5. Iniciar motor de emulação com os bytes da ROM e o Save RAM
                 val finalRom = if (romBytes.isNotEmpty()) romBytes else ByteArray(1024)
-                gbaCore.loadRom(finalRom, gameAchievements, existingSave)
-                if (!userPrefs.isHardcoreMode) {
-                    applyCheatsToEngine(savedCheats)
+                val loadedSuccessfully = gbaCore.loadRom(finalRom, gameAchievements, existingSave)
+                if (loadedSuccessfully) {
+                    if (!userPrefs.isHardcoreMode) {
+                        applyCheatsToEngine(savedCheats)
+                    }
+                    gbaCore.start()
+                } else {
+                    _statusMessage.value = "Falha ao carregar a ROM no motor de emulação."
                 }
-                gbaCore.start()
             }.onFailure {
                 _statusMessage.value = "Erro ao carregar ROM: ${it.localizedMessage}"
             }

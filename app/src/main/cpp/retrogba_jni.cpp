@@ -5,9 +5,11 @@
 #include <cstring>
 #include <algorithm>
 #include <vector>
+#include <mutex>
 
 // Headers do núcleo mGBA em C puro
 #include <mgba/core/core.h>
+#include <mgba/core/config.h>
 #include <mgba/core/cheats.h>
 #include <mgba/gba/core.h>
 #include <mgba/gba/interface.h>
@@ -24,6 +26,9 @@
 
 static constexpr int GBA_WIDTH = GBA_VIDEO_HORIZONTAL_PIXELS; // 240
 static constexpr int GBA_HEIGHT = GBA_VIDEO_VERTICAL_PIXELS;  // 160
+
+// Mutex de sincronização para garantir acesso thread-safe ao núcleo mGBA
+static std::mutex s_coreMutex;
 
 // Instância singleton do núcleo de emulação mGBA
 static struct mCore* s_core = nullptr;
@@ -112,8 +117,14 @@ extern "C" {
 
 JNIEXPORT jboolean JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeInit(JNIEnv* /* env */, jobject /* thiz */) {
+    std::lock_guard<std::mutex> lock(s_coreMutex);
     if (s_core != nullptr) {
+        if (s_isLoaded) {
+            s_core->unloadROM(s_core);
+            s_isLoaded = false;
+        }
         s_core->deinit(s_core);
+        mCoreConfigDeinit(&s_core->config);
         s_core = nullptr;
     }
 
@@ -123,8 +134,11 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeInit(JNIEnv* /* env */, jobjec
         return JNI_FALSE;
     }
 
+    mCoreInitConfig(s_core, nullptr);
+
     if (!s_core->init(s_core)) {
         LOGE("Falha ao inicializar struct mCore do mGBA");
+        mCoreConfigDeinit(&s_core->config);
         s_core = nullptr;
         return JNI_FALSE;
     }
@@ -161,14 +175,26 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadRom(JNIEnv* env, jobject /
         return JNI_FALSE;
     }
 
+    std::lock_guard<std::mutex> lock(s_coreMutex);
+
     if (s_core == nullptr) {
         s_core = GBACoreCreate();
-        if (s_core == nullptr || !s_core->init(s_core)) {
+        if (s_core == nullptr) {
             LOGE("Não foi possível preparar o núcleo mGBA para carregar a ROM");
+            return JNI_FALSE;
+        }
+        mCoreInitConfig(s_core, nullptr);
+        if (!s_core->init(s_core)) {
+            LOGE("Não foi possível inicializar o núcleo mGBA para carregar a ROM");
+            mCoreConfigDeinit(&s_core->config);
+            s_core = nullptr;
             return JNI_FALSE;
         }
         s_core->setVideoBuffer(s_core, reinterpret_cast<color_t*>(s_framebuffer), GBA_WIDTH);
         s_core->setAVStream(s_core, &s_avStream);
+    } else if (s_isLoaded) {
+        s_core->unloadROM(s_core);
+        s_isLoaded = false;
     }
 
     s_romData.resize(size);
@@ -182,6 +208,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadRom(JNIEnv* env, jobject /
 
     if (!s_core->loadROM(s_core, romVf)) {
         LOGE("mGBA rejeitou o carregamento da ROM (formato de imagem inválido)");
+        romVf->close(romVf);
         return JNI_FALSE;
     }
 
@@ -203,6 +230,8 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadRom(JNIEnv* env, jobject /
 
 JNIEXPORT void JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeRunFrame(JNIEnv* /* env */, jobject /* thiz */) {
+    std::unique_lock<std::mutex> lock(s_coreMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return;
     if (s_core == nullptr || !s_isLoaded) return;
 
     // 1. Atualiza o estado dos botões antes do ciclo de frame da CPU
@@ -319,6 +348,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeGetTriggeredAchievements(JNIEn
 
 JNIEXPORT jbyteArray JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeGetSaveRam(JNIEnv* env, jobject /* thiz */) {
+    std::lock_guard<std::mutex> lock(s_coreMutex);
     if (s_core == nullptr || !s_isLoaded) return nullptr;
 
     void* sramData = nullptr;
@@ -337,6 +367,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeGetSaveRam(JNIEnv* env, jobjec
 
 JNIEXPORT jboolean JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadSaveRam(JNIEnv* env, jobject /* thiz */, jbyteArray saveBytes) {
+    std::lock_guard<std::mutex> lock(s_coreMutex);
     if (s_core == nullptr || !s_isLoaded || saveBytes == nullptr) return JNI_FALSE;
 
     jsize len = env->GetArrayLength(saveBytes);
@@ -353,6 +384,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadSaveRam(JNIEnv* env, jobje
 
 JNIEXPORT jbyteArray JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeSaveState(JNIEnv* env, jobject /* thiz */) {
+    std::lock_guard<std::mutex> lock(s_coreMutex);
     if (s_core == nullptr || !s_isLoaded) return nullptr;
 
     size_t stateSize = s_core->stateSize(s_core);
@@ -377,6 +409,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeSaveState(JNIEnv* env, jobject
 
 JNIEXPORT jboolean JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadState(JNIEnv* env, jobject /* thiz */, jbyteArray stateBytes) {
+    std::lock_guard<std::mutex> lock(s_coreMutex);
     if (s_core == nullptr || !s_isLoaded || stateBytes == nullptr) return JNI_FALSE;
 
     jsize len = env->GetArrayLength(stateBytes);
@@ -517,6 +550,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeSetCheatEnabled(JNIEnv* /* env
 
 JNIEXPORT void JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeDestroy(JNIEnv* env, jobject /* thiz */) {
+    std::lock_guard<std::mutex> lock(s_coreMutex);
     if (s_rcInitialized) {
         rc_runtime_destroy(&s_rcRuntime);
         s_rcInitialized = false;
@@ -528,7 +562,12 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeDestroy(JNIEnv* env, jobject /
         if (dev != nullptr) {
             mCheatDeviceClear(dev);
         }
+        if (s_isLoaded) {
+            s_core->unloadROM(s_core);
+            s_isLoaded = false;
+        }
         s_core->deinit(s_core);
+        mCoreConfigDeinit(&s_core->config);
         s_core = nullptr;
     }
 

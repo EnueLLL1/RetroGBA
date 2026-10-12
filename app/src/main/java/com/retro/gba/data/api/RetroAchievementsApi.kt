@@ -1,7 +1,8 @@
 package com.retro.gba.data.api
 
-import com.google.gson.Gson
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.retro.gba.data.model.Achievement
 import com.retro.gba.data.model.GameInfo
 import com.retro.gba.data.model.UserProfile
@@ -10,7 +11,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 
 class RetroAchievementsApi {
@@ -21,31 +21,114 @@ class RetroAchievementsApi {
         .addInterceptor(com.retro.gba.security.NetworkSecurityInterceptor(enableLogging = true))
         .build()
 
-    private val gson = Gson()
     private val baseUrl = "https://retroachievements.org"
 
-    suspend fun login(username: String, tokenOrPass: String): Result<Pair<String, String>> =
-        withContext(Dispatchers.IO) {
-            try {
-                val url = "$baseUrl/dorequest.php?r=login&u=$username&p=$tokenOrPass"
-                val request = Request.Builder().url(url).build()
-                client.newCall(request).execute().use { response ->
-                    val body = response.body?.string() ?: ""
-                    val json = gson.fromJson(body, JsonObject::class.java)
+    /**
+     * Faz o parsing seguro de uma string para JsonElement sem lançar exceções não tratadas
+     * caso o servidor retorne um primitivo, texto livre, array, HTML ou string vazia.
+     */
+    fun parseSafeJson(body: String?): JsonElement? {
+        if (body.isNullOrBlank()) return null
+        val trimmed = body.trim()
+        if (trimmed.startsWith("<")) return null // Página HTML de erro
+        return try {
+            JsonParser.parseString(trimmed)
+        } catch (_: Exception) {
+            com.google.gson.JsonPrimitive(trimmed)
+        }
+    }
 
-                    if (json.has("Success") && json.get("Success").asBoolean) {
-                        val user = json.get("User").asString
-                        val token = json.get("Token").asString
-                        Result.success(Pair(user, token))
-                    } else {
-                        val error = if (json.has("Error")) json.get("Error").asString else "Falha no login"
-                        Result.failure(Exception(error))
-                    }
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
+    /**
+     * Extrai a mensagem de erro mais relevante de um JsonObject ou JsonElement.
+     */
+    fun extractErrorMessage(element: JsonElement?, defaultMsg: String): String {
+        if (element == null) return defaultMsg
+        if (element.isJsonPrimitive) {
+            val prim = element.asString
+            if (prim.isNotBlank()) return prim
+        }
+        if (element.isJsonObject) {
+            val obj = element.asJsonObject
+            when {
+                obj.has("Error") && !obj.get("Error").isJsonNull -> return obj.get("Error").asString
+                obj.has("message") && !obj.get("message").isJsonNull -> return obj.get("message").asString
+                obj.has("Code") && !obj.get("Code").isJsonNull -> return "Erro: ${obj.get("Code").asString}"
+                obj.has("Status") && !obj.get("Status").isJsonNull -> return "Erro de autenticação (Status: ${obj.get("Status").asString})"
             }
         }
+        return defaultMsg
+    }
+
+    /**
+     * Autentica no RetroAchievements via requisição POST urlencoded para /dorequest.php.
+     * Suporta autenticação tanto por senha (parâmetro 'p') quanto por Web API Key / Token (parâmetro 't').
+     */
+    suspend fun login(username: String, tokenOrPass: String): Result<Pair<String, String>> =
+        withContext(Dispatchers.IO) {
+            if (username.isBlank() || tokenOrPass.isBlank()) {
+                return@withContext Result.failure(Exception("Nome de usuário e senha/chave de API são obrigatórios"))
+            }
+
+            val looksLikeApiToken = tokenOrPass.length == 32 && tokenOrPass.all { it.isLetterOrDigit() }
+
+            // Se parece um token/chave web, tenta primeiro como token ('t'); caso contrário, tenta como senha ('p')
+            val primaryResult = executeLoginAttempt(username, tokenOrPass, useTokenParam = looksLikeApiToken)
+            if (primaryResult.isSuccess) {
+                return@withContext primaryResult
+            }
+
+            // Fallback: se a primeira tentativa falhar, tenta com o parâmetro alternativo ('p' vs 't')
+            val fallbackResult = executeLoginAttempt(username, tokenOrPass, useTokenParam = !looksLikeApiToken)
+            if (fallbackResult.isSuccess) {
+                return@withContext fallbackResult
+            }
+
+            // Retorna o erro mais descritivo
+            primaryResult
+        }
+
+    private fun executeLoginAttempt(username: String, secret: String, useTokenParam: Boolean): Result<Pair<String, String>> {
+        return try {
+            val formBody = FormBody.Builder()
+                .add("r", "login")
+                .add("u", username)
+                .add(if (useTokenParam) "t" else "p", secret)
+                .build()
+
+            val request = Request.Builder()
+                .url("$baseUrl/dorequest.php")
+                .post(formBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string()
+                val jsonElement = parseSafeJson(body)
+
+                if (jsonElement != null && jsonElement.isJsonObject) {
+                    val json = jsonElement.asJsonObject
+                    if (json.has("Success") && json.get("Success").asBoolean) {
+                        val user = json.get("User")?.asString ?: username
+                        val token = json.get("Token")?.asString ?: ""
+                        Result.success(Pair(user, token))
+                    } else {
+                        val error = extractErrorMessage(json, "Credenciais inválidas. Verifique seu usuário e senha/chave.")
+                        Result.failure(Exception(error))
+                    }
+                } else if (jsonElement != null && jsonElement.isJsonPrimitive) {
+                    val primitiveMsg = jsonElement.asString
+                    Result.failure(Exception(primitiveMsg.ifBlank { "Credenciais inválidas" }))
+                } else {
+                    if (!response.isSuccessful) {
+                        Result.failure(Exception("Falha na comunicação com RetroAchievements (HTTP ${response.code})"))
+                    } else {
+                        Result.failure(Exception("Resposta inesperada do servidor do RetroAchievements"))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     suspend fun getGameIdByHash(romMd5: String): Result<Long> =
         withContext(Dispatchers.IO) {
@@ -53,14 +136,19 @@ class RetroAchievementsApi {
                 val url = "$baseUrl/dorequest.php?r=gameid&m=$romMd5"
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
-                    val body = response.body?.string() ?: ""
-                    val json = gson.fromJson(body, JsonObject::class.java)
+                    val body = response.body?.string()
+                    val jsonElement = parseSafeJson(body)
 
-                    if (json.has("Success") && json.get("Success").asBoolean) {
-                        val gameId = json.get("GameID").asLong
-                        Result.success(gameId)
+                    if (jsonElement != null && jsonElement.isJsonObject) {
+                        val json = jsonElement.asJsonObject
+                        if (json.has("Success") && json.get("Success").asBoolean && json.has("GameID")) {
+                            val gameId = json.get("GameID").asLong
+                            Result.success(gameId)
+                        } else {
+                            Result.failure(Exception("Jogo não encontrado no RetroAchievements para esta ROM (MD5: $romMd5)"))
+                        }
                     } else {
-                        Result.failure(Exception("Jogo não encontrado no RetroAchievements para esta ROM (MD5: $romMd5)"))
+                        Result.failure(Exception("Jogo não catalogado no RetroAchievements para esta ROM"))
                     }
                 }
             } catch (e: Exception) {
@@ -74,51 +162,57 @@ class RetroAchievementsApi {
                 val url = "$baseUrl/dorequest.php?r=patch&g=$gameId"
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
-                    val body = response.body?.string() ?: ""
-                    val json = gson.fromJson(body, JsonObject::class.java)
+                    val body = response.body?.string()
+                    val jsonElement = parseSafeJson(body)
 
-                    if (json.has("Success") && json.get("Success").asBoolean) {
-                        val patchData = json.getAsJsonObject("PatchData")
-                        val title = patchData.get("Title").asString
-                        val icon = patchData.get("ImageIcon")?.asString
+                    if (jsonElement != null && jsonElement.isJsonObject) {
+                        val json = jsonElement.asJsonObject
+                        if (json.has("Success") && json.get("Success").asBoolean && json.has("PatchData")) {
+                            val patchData = json.getAsJsonObject("PatchData")
+                            val title = patchData.get("Title")?.asString ?: "Jogo Desconhecido"
+                            val icon = patchData.get("ImageIcon")?.asString
 
-                        val achievementsList = mutableListOf<Achievement>()
-                        if (patchData.has("Achievements")) {
-                            val achArray = patchData.getAsJsonArray("Achievements")
-                            for (element in achArray) {
-                                val item = element.asJsonObject
-                                val id = item.get("ID").asLong
-                                val achTitle = item.get("Title").asString
-                                val desc = item.get("Description").asString
-                                val points = item.get("Points").asInt
-                                val badgeName = item.get("BadgeName").asString
-                                val memAddr = item.get("MemAddr")?.asString
+                            val achievementsList = mutableListOf<Achievement>()
+                            if (patchData.has("Achievements")) {
+                                val achArray = patchData.getAsJsonArray("Achievements")
+                                for (element in achArray) {
+                                    if (!element.isJsonObject) continue
+                                    val item = element.asJsonObject
+                                    val id = item.get("ID")?.asLong ?: continue
+                                    val achTitle = item.get("Title")?.asString ?: "Conquista"
+                                    val desc = item.get("Description")?.asString ?: ""
+                                    val points = item.get("Points")?.asInt ?: 0
+                                    val badgeName = item.get("BadgeName")?.asString ?: ""
+                                    val memAddr = item.get("MemAddr")?.asString
 
-                                achievementsList.add(
-                                    Achievement(
-                                        id = id,
-                                        title = achTitle,
-                                        description = desc,
-                                        points = points,
-                                        badgeName = badgeName,
-                                        memAddr = memAddr
+                                    achievementsList.add(
+                                        Achievement(
+                                            id = id,
+                                            title = achTitle,
+                                            description = desc,
+                                            points = points,
+                                            badgeName = badgeName,
+                                            memAddr = memAddr
+                                        )
                                     )
-                                )
+                                }
                             }
+
+                            val totalPoints = achievementsList.sumOf { it.points }
+                            val gameInfo = GameInfo(
+                                id = gameId,
+                                title = title,
+                                imageIcon = icon,
+                                totalAchievements = achievementsList.size,
+                                totalPoints = totalPoints
+                            )
+
+                            Result.success(Pair(gameInfo, achievementsList))
+                        } else {
+                            Result.failure(Exception("Não foi possível carregar as conquistas do jogo"))
                         }
-
-                        val totalPoints = achievementsList.sumOf { it.points }
-                        val gameInfo = GameInfo(
-                            id = gameId,
-                            title = title,
-                            imageIcon = icon,
-                            totalAchievements = achievementsList.size,
-                            totalPoints = totalPoints
-                        )
-
-                        Result.success(Pair(gameInfo, achievementsList))
                     } else {
-                        Result.failure(Exception("Não foi possível carregar as conquistas do jogo"))
+                        Result.failure(Exception("Resposta inválida ao obter conquistas do jogo"))
                     }
                 }
             } catch (e: Exception) {
@@ -148,14 +242,21 @@ class RetroAchievementsApi {
                 .build()
 
             client.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                val json = gson.fromJson(body, JsonObject::class.java)
+                val body = response.body?.string()
+                val jsonElement = parseSafeJson(body)
 
-                if (json.has("Success") && json.get("Success").asBoolean) {
-                    Result.success(true)
+                if (jsonElement != null && jsonElement.isJsonObject) {
+                    val json = jsonElement.asJsonObject
+                    if (json.has("Success") && json.get("Success").asBoolean) {
+                        Result.success(true)
+                    } else {
+                        val err = extractErrorMessage(json, "Falha ao submeter conquista")
+                        Result.failure(Exception(err))
+                    }
+                } else if (jsonElement != null && jsonElement.isJsonPrimitive) {
+                    Result.failure(Exception(jsonElement.asString))
                 } else {
-                    val err = if (json.has("Error")) json.get("Error").asString else "Falha ao submeter conquista"
-                    Result.failure(Exception(err))
+                    Result.failure(Exception("Falha na submissão da conquista (HTTP ${response.code})"))
                 }
             }
         } catch (e: Exception) {
@@ -169,27 +270,35 @@ class RetroAchievementsApi {
                 val url = "$baseUrl/API/API_GetUserSummary.php?z=$username&y=$webApiKey&u=$username&g=0&a=0"
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
-                    val body = response.body?.string() ?: ""
-                    val json = gson.fromJson(body, JsonObject::class.java)
+                    val body = response.body?.string()
+                    val jsonElement = parseSafeJson(body)
 
-                    if (json.has("TotalPoints")) {
-                        val points = json.get("TotalPoints").asInt
-                        val hardcorePoints = json.get("TotalSoftcorePoints")?.asInt ?: points
-                        val rank = json.get("Rank")?.asInt ?: 0
-                        val userPic = json.get("UserPic")?.asString ?: ""
-                        val avatarUrl = "$baseUrl$userPic"
+                    if (jsonElement != null && jsonElement.isJsonObject) {
+                        val json = jsonElement.asJsonObject
+                        if (json.has("TotalPoints")) {
+                            val points = json.get("TotalPoints").asInt
+                            val hardcorePoints = json.get("TotalSoftcorePoints")?.asInt ?: points
+                            val rank = json.get("Rank")?.asInt ?: 0
+                            val userPic = json.get("UserPic")?.asString ?: ""
+                            val avatarUrl = "$baseUrl$userPic"
 
-                        Result.success(
-                            UserProfile(
-                                username = username,
-                                totalPoints = points,
-                                hardcorePoints = hardcorePoints,
-                                rank = rank,
-                                avatarUrl = avatarUrl
+                            Result.success(
+                                UserProfile(
+                                    username = username,
+                                    totalPoints = points,
+                                    hardcorePoints = hardcorePoints,
+                                    rank = rank,
+                                    avatarUrl = avatarUrl
+                                )
                             )
-                        )
+                        } else {
+                            val error = extractErrorMessage(json, "Perfil não localizado ou chave não autorizada")
+                            Result.failure(Exception(error))
+                        }
+                    } else if (jsonElement != null && jsonElement.isJsonPrimitive) {
+                        Result.failure(Exception(jsonElement.asString))
                     } else {
-                        Result.failure(Exception("Usuário não encontrado"))
+                        Result.failure(Exception("Não foi possível carregar dados do perfil (HTTP ${response.code})"))
                     }
                 }
             } catch (e: Exception) {
@@ -197,4 +306,3 @@ class RetroAchievementsApi {
             }
         }
 }
-

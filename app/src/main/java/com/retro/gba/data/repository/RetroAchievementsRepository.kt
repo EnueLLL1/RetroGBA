@@ -31,6 +31,9 @@ class RetroAchievementsRepository(
         result.onSuccess { (returnedUser, token) ->
             preferences.username = returnedUser
             preferences.token = token
+            if (passOrToken.length == 32 && passOrToken.all { it.isLetterOrDigit() }) {
+                preferences.webApiKey = passOrToken
+            }
         }
         return result
     }

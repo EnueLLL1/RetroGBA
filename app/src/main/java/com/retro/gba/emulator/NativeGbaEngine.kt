@@ -82,6 +82,10 @@ class NativeGbaEngine(
             return false
         }
 
+        if (_isRunning.get()) {
+            stop()
+        }
+
         val loaded = nativeLoadRom(romBytes, romBytes.size)
         if (!loaded) return false
 
