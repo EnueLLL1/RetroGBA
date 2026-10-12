@@ -36,6 +36,15 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _hapticFeedback = MutableStateFlow(userPrefs.hapticFeedbackEnabled)
+    val hapticFeedback: StateFlow<Boolean> = _hapticFeedback.asStateFlow()
+
+    private val _controllerOpacity = MutableStateFlow(userPrefs.controllerOpacity)
+    val controllerOpacity: StateFlow<Float> = _controllerOpacity.asStateFlow()
+
+    private val _fastForwardSpeed = MutableStateFlow(userPrefs.fastForwardSpeed)
+    val fastForwardSpeed: StateFlow<Float> = _fastForwardSpeed.asStateFlow()
+
     init {
         if (_isLoggedIn.value) {
             fetchProfile()
@@ -69,6 +78,23 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     fun setHardcore(enabled: Boolean) {
         repository.setHardcore(enabled)
         _isHardcore.value = enabled
+    }
+
+    fun setHapticFeedback(enabled: Boolean) {
+        userPrefs.hapticFeedbackEnabled = enabled
+        _hapticFeedback.value = enabled
+    }
+
+    fun setControllerOpacity(value: Float) {
+        val clamped = value.coerceIn(0.2f, 1.0f)
+        userPrefs.controllerOpacity = clamped
+        _controllerOpacity.value = clamped
+    }
+
+    fun setFastForwardSpeed(speed: Float) {
+        val clamped = speed.coerceIn(1.5f, 5.0f)
+        userPrefs.fastForwardSpeed = clamped
+        _fastForwardSpeed.value = clamped
     }
 
     private fun fetchProfile() {

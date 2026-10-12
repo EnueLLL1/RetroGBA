@@ -54,6 +54,17 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     private val _saveSlots = MutableStateFlow<List<SaveStateInfo>>(emptyList())
     val saveSlots: StateFlow<List<SaveStateInfo>> = _saveSlots.asStateFlow()
 
+    private val hapticManager = com.retro.gba.ui.haptics.HapticManager(application)
+
+    private val _controllerOpacity = MutableStateFlow(userPrefs.controllerOpacity)
+    val controllerOpacity: StateFlow<Float> = _controllerOpacity.asStateFlow()
+
+    private val _hapticFeedbackEnabled = MutableStateFlow(userPrefs.hapticFeedbackEnabled)
+    val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
+
+    private val _fastForwardSpeed = MutableStateFlow(userPrefs.fastForwardSpeed)
+    val fastForwardSpeed: StateFlow<Float> = _fastForwardSpeed.asStateFlow()
+
     val engine: com.retro.gba.emulator.IGbaEngine = if (com.retro.gba.emulator.NativeGbaEngine.isNativeAvailable()) {
         com.retro.gba.emulator.NativeGbaEngine(
             onFrameReady = { bmp -> _currentFrame.value = bmp },
@@ -131,6 +142,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
             }
 
             _recentUnlockedAchievement.value = achievement
+            hapticManager.performAchievementUnlock(_hapticFeedbackEnabled.value)
 
             if (raRepository.isLoggedIn()) {
                 raRepository.unlockAchievement(achievement)
@@ -146,7 +158,28 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     fun toggleTurbo() {
         val newState = !_isTurboActive.value
         _isTurboActive.value = newState
-        engine.setSpeedMultiplier(if (newState) 2.5f else 1.0f)
+        val speed = if (newState) _fastForwardSpeed.value else 1.0f
+        engine.setSpeedMultiplier(speed)
+    }
+
+    fun setControllerOpacity(value: Float) {
+        val clamped = value.coerceIn(0.2f, 1.0f)
+        _controllerOpacity.value = clamped
+        userPrefs.controllerOpacity = clamped
+    }
+
+    fun setHapticFeedback(enabled: Boolean) {
+        _hapticFeedbackEnabled.value = enabled
+        userPrefs.hapticFeedbackEnabled = enabled
+    }
+
+    fun setFastForwardSpeed(speed: Float) {
+        val clamped = speed.coerceIn(1.5f, 5.0f)
+        _fastForwardSpeed.value = clamped
+        userPrefs.fastForwardSpeed = clamped
+        if (_isTurboActive.value) {
+            engine.setSpeedMultiplier(clamped)
+        }
     }
 
     fun selectSlot(slot: Int) {

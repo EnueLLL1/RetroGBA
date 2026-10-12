@@ -38,6 +38,9 @@ fun EmulatorScreen(
     val isSimulationMode by viewModel.isSimulationMode.collectAsState()
     val activeSlot by viewModel.activeStateSlot.collectAsState()
     val saveSlots by viewModel.saveSlots.collectAsState()
+    val controllerOpacity by viewModel.controllerOpacity.collectAsState()
+    val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsState()
+    val fastForwardSpeed by viewModel.fastForwardSpeed.collectAsState()
 
     var showMenuSheet by remember { mutableStateOf(false) }
 
@@ -100,7 +103,7 @@ fun EmulatorScreen(
 
                     if (isTurbo) {
                         Text(
-                            text = "⚡ TURBO 2.5x",
+                            text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
                             color = GbaSecondary,
                             fontSize = 11.sp,
                             style = MaterialTheme.typography.labelMedium
@@ -125,6 +128,8 @@ fun EmulatorScreen(
                     },
                     onMenuClick = { showMenuSheet = true },
                     onTurboToggle = { viewModel.toggleTurbo() },
+                    opacity = controllerOpacity,
+                    hapticFeedbackEnabled = hapticFeedbackEnabled,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
@@ -242,6 +247,90 @@ fun EmulatorScreen(
                             Spacer(Modifier.width(8.dp))
                             Text("Gravar Bateria do Jogo (.SAV)")
                         }
+
+                        HorizontalDivider(color = Color.DarkGray)
+
+                        // Configurações de Controles Táteis e Interface
+                        Text(
+                            text = "Ajustes de Controles & Gameplay",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.White
+                        )
+
+                        // Slider de Opacidade dos Controles
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Opacidade dos Controles:",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                                Text(
+                                    text = "${(controllerOpacity * 100).toInt()}%",
+                                    fontSize = 12.sp,
+                                    color = GbaSecondary,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                )
+                            }
+                            Slider(
+                                value = controllerOpacity,
+                                onValueChange = { viewModel.setControllerOpacity(it) },
+                                valueRange = 0.2f..1.0f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        // Switch de Feedback Háptico (Vibração)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Vibração ao Tocar (Háptico)",
+                                    fontSize = 13.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Resposta tátil nos botões e conquistas",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = hapticFeedbackEnabled,
+                                onCheckedChange = { viewModel.setHapticFeedback(it) }
+                            )
+                        }
+
+                        // Chips de Velocidade de Turbo
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Multiplicador de Velocidade (Turbo):",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(2.0f, 2.5f, 3.0f, 4.0f).forEach { speed ->
+                                    val isSelected = fastForwardSpeed == speed
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setFastForwardSpeed(speed) },
+                                        label = { Text("${speed}x", fontSize = 12.sp) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = Color.DarkGray)
 
                         // Ver conquistas
                         Button(

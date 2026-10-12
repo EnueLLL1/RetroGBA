@@ -16,16 +16,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInteropFilter
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.retro.gba.emulator.GbaInput
+import com.retro.gba.ui.haptics.HapticManager
 import com.retro.gba.ui.theme.GbaPrimary
 import com.retro.gba.ui.theme.GbaSecondary
 
@@ -38,10 +39,10 @@ fun ControllerButton(
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
     containerColor: Color = GbaPrimary,
-    textColor: Color = Color.White
+    textColor: Color = Color.White,
+    onPressHaptic: () -> Unit = {}
 ) {
     var isPressed by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
 
     Box(
         contentAlignment = Alignment.Center,
@@ -54,7 +55,7 @@ fun ControllerButton(
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         isPressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPressHaptic()
                         onButtonChange(buttonMask, true)
                         true
                     }
@@ -76,11 +77,11 @@ fun ControllerButton(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DPad(
     onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPressHaptic: () -> Unit = {}
 ) {
     Box(
         modifier = modifier
@@ -96,7 +97,8 @@ fun DPad(
             onButtonChange = onButtonChange,
             size = 38.dp,
             containerColor = Color(0xFF3F3F74),
-            modifier = Modifier.align(Alignment.TopCenter)
+            modifier = Modifier.align(Alignment.TopCenter),
+            onPressHaptic = onPressHaptic
         )
         // Down
         ControllerButton(
@@ -105,7 +107,8 @@ fun DPad(
             onButtonChange = onButtonChange,
             size = 38.dp,
             containerColor = Color(0xFF3F3F74),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter),
+            onPressHaptic = onPressHaptic
         )
         // Left
         ControllerButton(
@@ -114,7 +117,8 @@ fun DPad(
             onButtonChange = onButtonChange,
             size = 38.dp,
             containerColor = Color(0xFF3F3F74),
-            modifier = Modifier.align(Alignment.CenterStart)
+            modifier = Modifier.align(Alignment.CenterStart),
+            onPressHaptic = onPressHaptic
         )
         // Right
         ControllerButton(
@@ -123,7 +127,8 @@ fun DPad(
             onButtonChange = onButtonChange,
             size = 38.dp,
             containerColor = Color(0xFF3F3F74),
-            modifier = Modifier.align(Alignment.CenterEnd)
+            modifier = Modifier.align(Alignment.CenterEnd),
+            onPressHaptic = onPressHaptic
         )
     }
 }
@@ -134,10 +139,10 @@ fun ShoulderButton(
     text: String,
     buttonMask: Int,
     onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPressHaptic: () -> Unit = {}
 ) {
     var isPressed by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
 
     Box(
         contentAlignment = Alignment.Center,
@@ -151,7 +156,7 @@ fun ShoulderButton(
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         isPressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPressHaptic()
                         onButtonChange(buttonMask, true)
                         true
                     }
@@ -178,10 +183,10 @@ fun ShoulderButton(
 fun SystemButton(
     text: String,
     buttonMask: Int,
-    onButtonChange: (mask: Int, pressed: Boolean) -> Unit
+    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
+    onPressHaptic: () -> Unit = {}
 ) {
     var isPressed by remember { mutableStateOf(false) }
-    val haptic = LocalHapticFeedback.current
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
@@ -196,7 +201,7 @@ fun SystemButton(
                     when (event.action) {
                         MotionEvent.ACTION_DOWN -> {
                             isPressed = true
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onPressHaptic()
                             onButtonChange(buttonMask, true)
                             true
                         }
@@ -224,11 +229,20 @@ fun VirtualController(
     onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
     onMenuClick: () -> Unit,
     onTurboToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    opacity: Float = 0.85f,
+    hapticFeedbackEnabled: Boolean = true
 ) {
+    val context = LocalContext.current
+    val hapticManager = remember(context) { HapticManager(context) }
+    val onHapticClick = remember(hapticFeedbackEnabled) {
+        { hapticManager.performButtonClick(hapticFeedbackEnabled) }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .alpha(opacity.coerceIn(0.2f, 1.0f))
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -242,12 +256,16 @@ fun VirtualController(
             ShoulderButton(
                 text = "L",
                 buttonMask = GbaInput.BUTTON_L,
-                onButtonChange = onButtonChange
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(
-                    onClick = onTurboToggle,
+                    onClick = {
+                        hapticManager.performTurboToggle(hapticFeedbackEnabled)
+                        onTurboToggle()
+                    },
                     modifier = Modifier
                         .size(36.dp)
                         .background(Color(0xFF2C2449), CircleShape)
@@ -278,7 +296,8 @@ fun VirtualController(
             ShoulderButton(
                 text = "R",
                 buttonMask = GbaInput.BUTTON_R,
-                onButtonChange = onButtonChange
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
             )
         }
 
@@ -287,7 +306,10 @@ fun VirtualController(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DPad(onButtonChange = onButtonChange)
+            DPad(
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
+            )
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -297,12 +319,14 @@ fun VirtualController(
                 SystemButton(
                     text = "SELECT",
                     buttonMask = GbaInput.BUTTON_SELECT,
-                    onButtonChange = onButtonChange
+                    onButtonChange = onButtonChange,
+                    onPressHaptic = onHapticClick
                 )
                 SystemButton(
                     text = "START",
                     buttonMask = GbaInput.BUTTON_START,
-                    onButtonChange = onButtonChange
+                    onButtonChange = onButtonChange,
+                    onPressHaptic = onHapticClick
                 )
             }
 
@@ -317,7 +341,8 @@ fun VirtualController(
                     onButtonChange = onButtonChange,
                     size = 46.dp,
                     containerColor = Color(0xFFD32F2F),
-                    modifier = Modifier.align(Alignment.BottomStart)
+                    modifier = Modifier.align(Alignment.BottomStart),
+                    onPressHaptic = onHapticClick
                 )
                 ControllerButton(
                     text = "A",
@@ -325,7 +350,8 @@ fun VirtualController(
                     onButtonChange = onButtonChange,
                     size = 46.dp,
                     containerColor = Color(0xFF388E3C),
-                    modifier = Modifier.align(Alignment.TopEnd)
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    onPressHaptic = onHapticClick
                 )
             }
         }

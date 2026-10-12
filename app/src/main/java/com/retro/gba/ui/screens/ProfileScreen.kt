@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +39,9 @@ fun ProfileScreen(
     val isHardcore by viewModel.isHardcore.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val hapticFeedback by viewModel.hapticFeedback.collectAsState()
+    val controllerOpacity by viewModel.controllerOpacity.collectAsState()
+    val fastForwardSpeed by viewModel.fastForwardSpeed.collectAsState()
 
     var inputUser by remember { mutableStateOf("") }
     var inputPass by remember { mutableStateOf("") }
@@ -180,6 +184,83 @@ fun ProfileScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Configurações Globais de Controles & Gameplay
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = GbaCard),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "Preferências de Controles & Jogabilidade",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+
+                    // Opacidade
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "Opacidade Padrão dos Controles", fontSize = 13.sp, color = Color.LightGray)
+                            Text(
+                                text = "${(controllerOpacity * 100).toInt()}%",
+                                fontSize = 13.sp,
+                                color = GbaSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Slider(
+                            value = controllerOpacity,
+                            onValueChange = { viewModel.setControllerOpacity(it) },
+                            valueRange = 0.2f..1.0f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // Haptic Feedback
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Feedback Háptico (Vibração)", fontSize = 13.sp, color = Color.LightGray)
+                            Text(text = "Vibrar ao pressionar botões virtuais e destravar conquistas", fontSize = 11.sp, color = Color.Gray)
+                        }
+                        Switch(
+                            checked = hapticFeedback,
+                            onCheckedChange = { viewModel.setHapticFeedback(it) }
+                        )
+                    }
+
+                    // Velocidade Fast Forward
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(text = "Velocidade Padrão do Turbo", fontSize = 13.sp, color = Color.LightGray)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(2.0f, 2.5f, 3.0f, 4.0f).forEach { speed ->
+                                FilterChip(
+                                    selected = fastForwardSpeed == speed,
+                                    onClick = { viewModel.setFastForwardSpeed(speed) },
+                                    label = { Text("${speed}x", fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedButton(
@@ -187,7 +268,7 @@ fun ProfileScreen(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Logout, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Desconectar do RetroAchievements")
             }
