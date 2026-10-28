@@ -82,7 +82,14 @@ class AchievementEvaluator {
             addrStr = cleanLeft.substring(2)
         }
 
-        val address = addrStr.toLongOrNull(16) ?: return null
+        val parsedAddr = addrStr.toLongOrNull(16) ?: return null
+        val finalAddress = when {
+            parsedAddr >= 0x02000000L -> parsedAddr
+            parsedAddr <= 0x007FFFL -> 0x03000000L + parsedAddr               // IWRAM (0x000000 - 0x007FFF)
+            parsedAddr <= 0x047FFFL -> 0x02000000L + (parsedAddr - 0x008000L) // EWRAM (0x008000 - 0x047FFF)
+            parsedAddr <= 0x057FFFL -> 0x0E000000L + (parsedAddr - 0x048000L) // SRAM  (0x048000 - 0x057FFF)
+            else -> parsedAddr
+        }
 
         val targetVal = if (rightPart.startsWith("0x", ignoreCase = true)) {
             rightPart.substring(2).toLongOrNull(16) ?: 0L
@@ -92,7 +99,7 @@ class AchievementEvaluator {
 
         return MemoryCondition(
             size = size,
-            address = address,
+            address = finalAddress,
             operator = matchedOp,
             targetValue = targetVal,
             isDelta = isDelta
@@ -163,4 +170,3 @@ class AchievementEvaluator {
         return unlockedNow
     }
 }
-

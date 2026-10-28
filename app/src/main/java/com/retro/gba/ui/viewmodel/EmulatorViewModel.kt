@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.retro.gba.data.api.RetroAchievementsApi
 import com.retro.gba.data.model.Achievement
 import com.retro.gba.data.model.GameInfo
+import com.retro.gba.data.model.RomItem
 import com.retro.gba.data.prefs.UserPreferences
 import com.retro.gba.data.repository.RetroAchievementsRepository
 import com.retro.gba.data.repository.RomRepository
@@ -19,6 +20,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 
 class EmulatorViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -95,11 +99,25 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     init {
         viewModelScope.launch {
+            var pingCounter = 0
             while (true) {
                 delay(1000)
                 if (gbaCore.isRunning && !gbaCore.isPaused) {
                     _currentFps.value = gbaCore.currentFps
                     updateFrameskip()
+
+                    // Heartbeat periódico de ping a cada 120 segundos (2 minutos)
+                    pingCounter++
+                    if (pingCounter >= 120) {
+                        pingCounter = 0
+                        _currentGame.value?.let { game ->
+                            if (raRepository.isLoggedIn()) {
+                                raRepository.ping(game.id, "Jogando ${game.title}")
+                            }
+                        }
+                    }
+                } else {
+                    pingCounter = 0
                 }
             }
         }
@@ -119,6 +137,11 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     fun onAppPause() {
         if (gbaCore.isRunning && !gbaCore.isPaused) {
             gbaCore.pause()
+            _currentGame.value?.let { game ->
+                viewModelScope.launch {
+                    raRepository.ping(game.id, "Pausado")
+                }
+            }
         }
     }
 
@@ -126,6 +149,11 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         if (gbaCore.isRunning && gbaCore.isPaused) {
             gbaCore.resume()
             updateFrameskip()
+            _currentGame.value?.let { game ->
+                viewModelScope.launch {
+                    raRepository.ping(game.id, "Jogando ${game.title}")
+                }
+            }
         }
     }
 
@@ -153,9 +181,28 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                     val achResult = raRepository.getAchievements(gameId)
                     achResult.onSuccess { (info, list) ->
                         _currentGame.value = info
-                        _achievements.value = list
-                        gameAchievements = list
+
+                        // Inicia sessão oficial de jogo e obtém conquistas já salvas no servidor
+                        val sessionResult = raRepository.startSession(info.id, md5)
+                        val unlockedIds = sessionResult.getOrDefault(emptySet())
+
+                        val updatedList = list.map { ach ->
+                            if (unlockedIds.contains(ach.id)) ach.copy(isUnlocked = true) else ach
+                        }
+
+                        _achievements.value = updatedList
+                        gameAchievements = updatedList
                         _statusMessage.value = "Conectado ao RetroAchievements: ${info.title} (${list.size} conquistas)"
+
+                        // Salva o ícone/capa do jogo e dados de conquistas atualizados no RomItem
+                        val updatedRomItem = romItem.copy(
+                            gameId = info.id,
+                            title = if (info.title.isNotBlank()) info.title else romItem.title,
+                            totalAchievements = list.size,
+                            totalPoints = list.sumOf { it.points },
+                            badgeIconUrl = info.iconUrl
+                        )
+                        romRepo.saveRomItem(updatedRomItem)
                     }.onFailure {
                         _statusMessage.value = "Conquistas indisponíveis: ${it.localizedMessage}"
                     }
@@ -191,6 +238,10 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 _statusMessage.value = "Erro ao carregar ROM: ${it.localizedMessage}"
             }
         }
+    }
+
+    fun getSavedRoms(): List<RomItem> {
+        return romRepo.getSavedRoms()
     }
 
     private fun handleAchievementUnlock(achievement: Achievement) {
@@ -257,10 +308,26 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         if (saveRam.isEmpty()) return
 
         viewModelScope.launch {
-            val saved = saveRepository.saveBatteryRam(hash, saveRam)
-            if (saved) {
-                _statusMessage.value = "Progresso do cartucho salvo com sucesso!"
+            withContext(NonCancellable) {
+                val saved = saveRepository.saveBatteryRam(hash, saveRam)
+                if (saved) {
+                    _statusMessage.value = "Progresso do cartucho salvo com sucesso!"
+                }
             }
+        }
+    }
+
+    private fun persistBatterySaveBlocking() {
+        val hash = currentRomHash ?: return
+        val saveRam = engine.getSaveRam() ?: return
+        if (saveRam.isEmpty()) return
+
+        try {
+            runBlocking {
+                saveRepository.saveBatteryRam(hash, saveRam)
+            }
+        } catch (t: Throwable) {
+            android.util.Log.e("EmulatorViewModel", "Erro ao persistir save de bateria no onCleared", t)
         }
     }
 
@@ -392,7 +459,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
-        persistBatterySave()
+        persistBatterySaveBlocking()
         gbaCore.stop()
     }
 }

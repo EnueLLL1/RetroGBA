@@ -45,6 +45,21 @@ add_subdirectory(mgba)
 
 # Fontes do runtime oficial rcheevos (RetroAchievements em C)
 set(RCHEEVOS_SRC
+    rcheevos/src/api/rc_api_common.c
+    rcheevos/src/api/rc_api_editor.c
+    rcheevos/src/api/rc_api_info.c
+    rcheevos/src/api/rc_api_runtime.c
+    rcheevos/src/api/rc_api_user.c
+    rcheevos/src/client/rc_client.c
+    rcheevos/src/client/rc_client_external.c
+    rcheevos/src/client/rc_client_raintegration.c
+    rcheevos/src/hash/aes.c
+    rcheevos/src/hash/rc_cdreader.c
+    rcheevos/src/hash/rc_hash.c
+    rcheevos/src/hash/rc_hash_disc.c
+    rcheevos/src/hash/rc_hash_encrypted.c
+    rcheevos/src/hash/rc_hash_rom.c
+    rcheevos/src/hash/rc_hash_zip.c
     rcheevos/src/runtime/rc_alloc.c
     rcheevos/src/runtime/rc_condition.c
     rcheevos/src/runtime/rc_condset.c
@@ -58,6 +73,7 @@ set(RCHEEVOS_SRC
     rcheevos/src/runtime/rc_runtime_progress.c
     rcheevos/src/runtime/rc_trigger.c
     rcheevos/src/runtime/rc_typed_value.c
+    rcheevos/src/runtime/rc_validate.c
     rcheevos/src/runtime/rc_value.c
     rcheevos/src/util/md5.c
     rcheevos/src/util/rc_compat.c
@@ -66,6 +82,7 @@ set(RCHEEVOS_SRC
 )
 
 add_library(rcheevos STATIC ${RCHEEVOS_SRC})
+target_compile_definitions(rcheevos PUBLIC RC_CLIENT_SUPPORTS_HASH)
 target_include_directories(rcheevos PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/rcheevos/include
 )
@@ -90,3 +107,5 @@ target_link_libraries(retrogba
     ${log-lib}
     ${jnigraphics-lib}
 )
+
+target_link_options(retrogba PRIVATE "-Wl,-z,max-page-size=16384")

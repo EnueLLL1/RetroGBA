@@ -1,11 +1,12 @@
 package com.retro.gba
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.retro.gba.ui.screens.AchievementsScreen
@@ -39,12 +41,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         setContent {
             RetroGBATheme {
                 val navController = rememberNavController()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
+
+                val configuration = LocalConfiguration.current
+                val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
 
                 val screens = listOf(
                     Screen.Library,
@@ -53,74 +59,102 @@ class MainActivity : ComponentActivity() {
                     Screen.Profile
                 )
 
-                Scaffold(
-                    containerColor = GbaBackground,
-                    bottomBar = {
-                        NavigationBar(
-                            containerColor = Color(0xFF161424)
-                        ) {
-                            screens.forEach { screen ->
-                                NavigationBarItem(
-                                    icon = { Icon(screen.icon, contentDescription = screen.title) },
-                                    label = { Text(screen.title) },
-                                    selected = currentRoute == screen.route,
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = Color.Black,
-                                        selectedTextColor = GbaSecondary,
-                                        indicatorColor = GbaSecondary,
-                                        unselectedIconColor = Color.Gray,
-                                        unselectedTextColor = Color.Gray
-                                    ),
-                                    onClick = {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = GbaBackground
+                ) {
+                    if (isLandscape) {
+                        // Layout Adaptativo em Modo Paisagem / Telas Grandes (NavigationRail na Lateral)
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            NavigationRail(
+                                containerColor = Color(0xFF161424),
+                                contentColor = Color.White
+                            ) {
+                                Spacer(Modifier.weight(1f))
+                                screens.forEach { screen ->
+                                    NavigationRailItem(
+                                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                        label = { Text(screen.title) },
+                                        selected = currentRoute == screen.route,
+                                        colors = NavigationRailItemDefaults.colors(
+                                            selectedIconColor = Color.Black,
+                                            selectedTextColor = GbaSecondary,
+                                            indicatorColor = GbaSecondary,
+                                            unselectedIconColor = Color.Gray,
+                                            unselectedTextColor = Color.Gray
+                                        ),
+                                        onClick = {
+                                            navController.navigate(screen.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
                                         }
-                                    }
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                            ) {
+                                MainNavHost(
+                                    navController = navController,
+                                    emulatorViewModel = emulatorViewModel,
+                                    profileViewModel = profileViewModel
                                 )
                             }
                         }
-                    }
-                ) { innerPadding ->
-                    NavHost(
-                        navController = navController,
-                        startDestination = Screen.Library.route,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        composable(Screen.Library.route) {
-                            LibraryScreen(
-                                emulatorViewModel = emulatorViewModel,
-                                onGameSelected = {
-                                    navController.navigate(Screen.Emulator.route) {
-                                        launchSingleTop = true
+                    } else {
+                        // Layout Retrato Padrão (NavigationBar na Parte Inferior)
+                        Scaffold(
+                            containerColor = GbaBackground,
+                            bottomBar = {
+                                NavigationBar(
+                                    containerColor = Color(0xFF161424)
+                                ) {
+                                    screens.forEach { screen ->
+                                        NavigationBarItem(
+                                            icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                            label = { Text(screen.title) },
+                                            selected = currentRoute == screen.route,
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = Color.Black,
+                                                selectedTextColor = GbaSecondary,
+                                                indicatorColor = GbaSecondary,
+                                                unselectedIconColor = Color.Gray,
+                                                unselectedTextColor = Color.Gray
+                                            ),
+                                            onClick = {
+                                                navController.navigate(screen.route) {
+                                                    popUpTo(navController.graph.findStartDestination().id) {
+                                                        saveState = true
+                                                    }
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
+                                            }
+                                        )
                                     }
                                 }
-                            )
-                        }
-                        composable(Screen.Emulator.route) {
-                            EmulatorScreen(
-                                viewModel = emulatorViewModel,
-                                onNavigateToAchievements = {
-                                    navController.navigate(Screen.Achievements.route) {
-                                        launchSingleTop = true
-                                    }
-                                }
-                            )
-                        }
-                        composable(Screen.Achievements.route) {
-                            AchievementsScreen(
-                                viewModel = emulatorViewModel
-                            )
-                        }
-                        composable(Screen.Profile.route) {
-                            ProfileScreen(
-                                viewModel = profileViewModel
-                            )
+                            }
+                        ) { innerPadding ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding)
+                            ) {
+                                MainNavHost(
+                                    navController = navController,
+                                    emulatorViewModel = emulatorViewModel,
+                                    profileViewModel = profileViewModel
+                                )
+                            }
                         }
                     }
                 }
@@ -129,3 +163,46 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+private fun MainNavHost(
+    navController: androidx.navigation.NavHostController,
+    emulatorViewModel: EmulatorViewModel,
+    profileViewModel: ProfileViewModel
+) {
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Library.route,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable(Screen.Library.route) {
+            LibraryScreen(
+                emulatorViewModel = emulatorViewModel,
+                onGameSelected = {
+                    navController.navigate(Screen.Emulator.route) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+        composable(Screen.Emulator.route) {
+            EmulatorScreen(
+                viewModel = emulatorViewModel,
+                onNavigateToAchievements = {
+                    navController.navigate(Screen.Achievements.route) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+        composable(Screen.Achievements.route) {
+            AchievementsScreen(
+                viewModel = emulatorViewModel
+            )
+        }
+        composable(Screen.Profile.route) {
+            ProfileScreen(
+                viewModel = profileViewModel
+            )
+        }
+    }
+}

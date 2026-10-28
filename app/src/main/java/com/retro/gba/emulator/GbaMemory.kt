@@ -10,6 +10,12 @@ class GbaMemory {
     // 1KB I/O Registers (0x04000000)
     val ioRegs = ByteArray(1024)
 
+    init {
+        // Inicializa registrador KEYINPUT (0x04000130) com 0x03FF (Active Low - todos os botões soltos)
+        ioRegs[0x130] = 0xFF.toByte()
+        ioRegs[0x131] = 0x03.toByte()
+    }
+
     // 96KB VRAM (0x06000000)
     val vram = ByteArray(96 * 1024)
 

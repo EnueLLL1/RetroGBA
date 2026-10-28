@@ -1,5 +1,6 @@
 package com.retro.gba.ui.screens
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -79,6 +81,9 @@ fun EmulatorScreen(
         }
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = GbaBackground
@@ -88,110 +93,139 @@ fun EmulatorScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.SpaceBetween,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Barra superior de status do jogo & Telemetria de Performance
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (isLandscape) {
+                // Layout Responsivo para Modo Paisagem (Horizontal)
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = currentGame?.title ?: "RetroGBA Player",
-                            color = Color.LightGray,
-                            fontSize = 13.sp,
-                            maxLines = 1
-                        )
-                        if (isSimulationMode) {
-                            Surface(
-                                color = Color(0xFF441820),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = "SIMULAÇÃO",
-                                    color = Color(0xFFFF8A80),
-                                    fontSize = 10.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
+                    GbaScreenCanvas(
+                        bitmap = currentFrame,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .aspectRatio(3f / 2f)
+                            .padding(vertical = 4.dp)
+                    )
 
+                    VirtualController(
+                        onButtonChange = { mask, pressed ->
+                            viewModel.gbaCore.setButtonPressed(mask, pressed)
+                        },
+                        onMenuClick = { showMenuSheet = true },
+                        onTurboToggle = { viewModel.toggleTurbo() },
+                        opacity = controllerOpacity,
+                        hapticFeedbackEnabled = hapticFeedbackEnabled,
+                        isLandscape = true,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            } else {
+                // Layout em Modo Retrato (Vertical)
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Barra superior de status do jogo & Telemetria de Performance
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Telemetria de FPS
-                        Surface(
-                            color = Color(0xFF1B192A),
-                            shape = RoundedCornerShape(4.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "$currentFps FPS",
-                                color = if (currentFps >= 50) Color(0xFF81C784) else Color(0xFFFFB74D),
-                                fontSize = 10.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                text = currentGame?.title ?: "RetroGBA Player",
+                                color = Color.LightGray,
+                                fontSize = 13.sp,
+                                maxLines = 1
                             )
+                            if (isSimulationMode) {
+                                Surface(
+                                    color = Color(0xFF441820),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "SIMULAÇÃO",
+                                        color = Color(0xFFFF8A80),
+                                        fontSize = 10.sp,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
 
-                        if (isEcoMode) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Surface(
-                                color = Color(0xFF1B3B24),
+                                color = Color(0xFF1B192A),
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = "🍃 ECO",
-                                    color = Color(0xFFA5D6A7),
+                                    text = "$currentFps FPS",
+                                    color = if (currentFps >= 50) Color(0xFF81C784) else Color(0xFFFFB74D),
                                     fontSize = 10.sp,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                        }
 
-                        if (isTurbo) {
-                            Text(
-                                text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
-                                color = GbaSecondary,
-                                fontSize = 11.sp,
-                                style = MaterialTheme.typography.labelMedium
-                            )
+                            if (isEcoMode) {
+                                Surface(
+                                    color = Color(0xFF1B3B24),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "🍃 ECO",
+                                        color = Color(0xFFA5D6A7),
+                                        fontSize = 10.sp,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            if (isTurbo) {
+                                Text(
+                                    text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
+                                    color = GbaSecondary,
+                                    fontSize = 11.sp,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
                         }
                     }
+
+                    // Tela de exibição do jogo GBA
+                    GbaScreenCanvas(
+                        bitmap = currentFrame,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Controles Virtuais Táteis
+                    VirtualController(
+                        onButtonChange = { mask, pressed ->
+                            viewModel.gbaCore.setButtonPressed(mask, pressed)
+                        },
+                        onMenuClick = { showMenuSheet = true },
+                        onTurboToggle = { viewModel.toggleTurbo() },
+                        opacity = controllerOpacity,
+                        hapticFeedbackEnabled = hapticFeedbackEnabled,
+                        isLandscape = false,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
                 }
-
-                // Tela de exibição do jogo GBA (aspect ratio 3:2)
-                GbaScreenCanvas(
-                    bitmap = currentFrame,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Controles Virtuais Táteis
-                VirtualController(
-                    onButtonChange = { mask, pressed ->
-                        viewModel.gbaCore.setButtonPressed(mask, pressed)
-                    },
-                    onMenuClick = { showMenuSheet = true },
-                    onTurboToggle = { viewModel.toggleTurbo() },
-                    opacity = controllerOpacity,
-                    hapticFeedbackEnabled = hapticFeedbackEnabled,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
             }
 
             // Notificação flutuante de conquista desbloqueada

@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 class RetroAchievementsApi {
@@ -18,6 +19,12 @@ class RetroAchievementsApi {
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "RetroGBA/1.0 (Android; mGBA)")
+                .build()
+            chain.proceed(request)
+        }
         .addInterceptor(com.retro.gba.security.NetworkSecurityInterceptor(enableLogging = true))
         .build()
 
@@ -75,6 +82,14 @@ class RetroAchievementsApi {
             val primaryResult = executeLoginAttempt(username, tokenOrPass, useTokenParam = looksLikeApiToken)
             if (primaryResult.isSuccess) {
                 return@withContext primaryResult
+            }
+
+            // Se parece uma Web API Key de 32 caracteres, tenta validar via API_GetUserSummary.php
+            if (looksLikeApiToken) {
+                val profileResult = getUserProfile(username, tokenOrPass)
+                if (profileResult.isSuccess) {
+                    return@withContext Result.success(Pair(username, tokenOrPass))
+                }
             }
 
             // Fallback: se a primeira tentativa falhar, tenta com o parâmetro alternativo ('p' vs 't')
@@ -156,10 +171,17 @@ class RetroAchievementsApi {
             }
         }
 
-    suspend fun getGameAchievements(gameId: Long): Result<Pair<GameInfo, List<Achievement>>> =
+    suspend fun getGameAchievements(
+        gameId: Long,
+        username: String? = null,
+        token: String? = null
+    ): Result<Pair<GameInfo, List<Achievement>>> =
         withContext(Dispatchers.IO) {
             try {
-                val url = "$baseUrl/dorequest.php?r=patch&g=$gameId"
+                var url = "$baseUrl/dorequest.php?r=patch&g=$gameId"
+                if (!username.isNullOrBlank() && !token.isNullOrBlank()) {
+                    url += "&u=$username&t=$token"
+                }
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string()
@@ -220,6 +242,106 @@ class RetroAchievementsApi {
             }
         }
 
+    suspend fun startSession(
+        username: String,
+        token: String,
+        gameId: Long,
+        romHash: String,
+        isHardcore: Boolean
+    ): Result<Set<Long>> = withContext(Dispatchers.IO) {
+        try {
+            val hardcoreFlag = if (isHardcore) "1" else "0"
+            val formBody = FormBody.Builder()
+                .add("r", "startsession")
+                .add("u", username)
+                .add("t", token)
+                .add("g", gameId.toString())
+                .add("m", romHash)
+                .add("h", hardcoreFlag)
+                .build()
+
+            val request = Request.Builder()
+                .url("$baseUrl/dorequest.php")
+                .post(formBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string()
+                val jsonElement = parseSafeJson(body)
+
+                val unlockedIds = mutableSetOf<Long>()
+
+                if (jsonElement != null && jsonElement.isJsonObject) {
+                    val json = jsonElement.asJsonObject
+                    if (json.has("Success") && json.get("Success").asBoolean) {
+                        val arrayKey = if (isHardcore) "HardcoreUnlocks" else "Unlocks"
+                        val arraysToProcess = listOfNotNull(
+                            if (json.has(arrayKey) && json.get(arrayKey).isJsonArray) json.getAsJsonArray(arrayKey) else null,
+                            if (!isHardcore && json.has("HardcoreUnlocks") && json.get("HardcoreUnlocks").isJsonArray) json.getAsJsonArray("HardcoreUnlocks") else null
+                        )
+
+                        for (arr in arraysToProcess) {
+                            for (elem in arr) {
+                                when {
+                                    elem.isJsonObject -> {
+                                        val obj = elem.asJsonObject
+                                        val id = obj.get("ID")?.asLong ?: obj.get("AchievementID")?.asLong
+                                        if (id != null) unlockedIds.add(id)
+                                    }
+                                    elem.isJsonPrimitive -> {
+                                        val id = elem.asLong
+                                        unlockedIds.add(id)
+                                    }
+                                }
+                            }
+                        }
+                        Result.success(unlockedIds)
+                    } else {
+                        Result.failure(Exception(extractErrorMessage(json, "Falha ao iniciar sessão no RetroAchievements")))
+                    }
+                } else {
+                    if (response.isSuccessful) {
+                        Result.success(emptySet())
+                    } else {
+                        Result.failure(Exception("Falha na comunicação com servidor (HTTP ${response.code})"))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun ping(
+        username: String,
+        token: String,
+        gameId: Long,
+        richPresence: String? = null
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val builder = FormBody.Builder()
+                .add("r", "ping")
+                .add("u", username)
+                .add("t", token)
+                .add("g", gameId.toString())
+
+            if (!richPresence.isNullOrBlank()) {
+                builder.add("m", richPresence)
+            }
+
+            val request = Request.Builder()
+                .url("$baseUrl/dorequest.php")
+                .post(builder.build())
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                Result.success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun awardAchievement(
         username: String,
         token: String,
@@ -228,12 +350,16 @@ class RetroAchievementsApi {
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val hardcoreFlag = if (isHardcore) "1" else "0"
+            val rawSig = "$achievementId$username$hardcoreFlag"
+            val vSig = MessageDigest.getInstance("MD5").digest(rawSig.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+
             val formBody = FormBody.Builder()
                 .add("r", "awardachievement")
                 .add("u", username)
                 .add("t", token)
                 .add("a", achievementId.toString())
                 .add("h", hardcoreFlag)
+                .add("v", vSig)
                 .build()
 
             val request = Request.Builder()

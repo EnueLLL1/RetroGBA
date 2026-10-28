@@ -231,6 +231,168 @@ fun VirtualController(
     onTurboToggle: () -> Unit,
     modifier: Modifier = Modifier,
     opacity: Float = 0.85f,
+    hapticFeedbackEnabled: Boolean = true,
+    isLandscape: Boolean = false
+) {
+    if (isLandscape) {
+        LandscapeVirtualController(
+            onButtonChange = onButtonChange,
+            onMenuClick = onMenuClick,
+            onTurboToggle = onTurboToggle,
+            modifier = modifier,
+            opacity = opacity,
+            hapticFeedbackEnabled = hapticFeedbackEnabled
+        )
+    } else {
+        PortraitVirtualController(
+            onButtonChange = onButtonChange,
+            onMenuClick = onMenuClick,
+            onTurboToggle = onTurboToggle,
+            modifier = modifier,
+            opacity = opacity,
+            hapticFeedbackEnabled = hapticFeedbackEnabled
+        )
+    }
+}
+
+@Composable
+fun LandscapeVirtualController(
+    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
+    onMenuClick: () -> Unit,
+    onTurboToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    opacity: Float = 0.85f,
+    hapticFeedbackEnabled: Boolean = true
+) {
+    val context = LocalContext.current
+    val hapticManager = remember(context) { HapticManager(context) }
+    val onHapticClick = remember(hapticFeedbackEnabled) {
+        { hapticManager.performButtonClick(hapticFeedbackEnabled) }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .alpha(opacity.coerceIn(0.2f, 1.0f))
+            .padding(12.dp)
+    ) {
+        // Left Side: L Shoulder & D-Pad
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            ShoulderButton(
+                text = "L",
+                buttonMask = GbaInput.BUTTON_L,
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
+            )
+            DPad(
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
+            )
+        }
+
+        // Top Center: System Buttons (Select, Start, Turbo, Menu)
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .background(Color(0x881E1A2E), CircleShape)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SystemButton(
+                text = "SELECT",
+                buttonMask = GbaInput.BUTTON_SELECT,
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
+            )
+            SystemButton(
+                text = "START",
+                buttonMask = GbaInput.BUTTON_START,
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
+            )
+            IconButton(
+                onClick = {
+                    hapticManager.performTurboToggle(hapticFeedbackEnabled)
+                    onTurboToggle()
+                },
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(Color(0xFF2C2449), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FastForward,
+                    contentDescription = "Turbo",
+                    tint = GbaSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(
+                onClick = onMenuClick,
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(Color(0xFF2C2449), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "Menu",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        // Right Side: R Shoulder & Action Buttons (A/B)
+        Column(
+            modifier = Modifier.align(Alignment.BottomEnd),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            ShoulderButton(
+                text = "R",
+                buttonMask = GbaInput.BUTTON_R,
+                onButtonChange = onButtonChange,
+                onPressHaptic = onHapticClick
+            )
+            Box(
+                modifier = Modifier
+                    .size(110.dp)
+                    .padding(4.dp)
+            ) {
+                ControllerButton(
+                    text = "B",
+                    buttonMask = GbaInput.BUTTON_B,
+                    onButtonChange = onButtonChange,
+                    size = 46.dp,
+                    containerColor = Color(0xFFD32F2F),
+                    onPressHaptic = onHapticClick,
+                    modifier = Modifier.align(Alignment.BottomStart)
+                )
+                ControllerButton(
+                    text = "A",
+                    buttonMask = GbaInput.BUTTON_A,
+                    onButtonChange = onButtonChange,
+                    size = 46.dp,
+                    containerColor = Color(0xFF388E3C),
+                    onPressHaptic = onHapticClick,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PortraitVirtualController(
+    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
+    onMenuClick: () -> Unit,
+    onTurboToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    opacity: Float = 0.85f,
     hapticFeedbackEnabled: Boolean = true
 ) {
     val context = LocalContext.current

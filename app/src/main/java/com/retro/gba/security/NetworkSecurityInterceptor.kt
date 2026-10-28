@@ -19,7 +19,14 @@ class NetworkSecurityInterceptor(
     }
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
+        val originalRequest = chain.request()
+
+        // Adiciona User-Agent de navegador/app para evitar bloqueio HTTP 403 do Firewall / Cloudflare do RetroAchievements
+        val request = originalRequest.newBuilder()
+            .header("User-Agent", "RetroGBA/1.0.0 (Android; RetroAchievements Client)")
+            .header("Accept", "application/json, text/plain, */*")
+            .build()
+
         val originalUrl = request.url
 
         if (enableLogging) {

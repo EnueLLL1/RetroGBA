@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,10 +37,24 @@ fun LibraryScreen(
     onGameSelected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    var romList by remember { mutableStateOf<List<RomItem>>(emptyList()) }
+    var savedRoms by remember { mutableStateOf<List<RomItem>>(emptyList()) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    // Launcher do SAF para seleção de arquivos .gba
+    LaunchedEffect(Unit) {
+        savedRoms = emulatorViewModel.getSavedRoms()
+    }
+
+    val filteredRoms = remember(searchQuery, savedRoms) {
+        if (searchQuery.isBlank()) {
+            savedRoms
+        } else {
+            savedRoms.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                it.fileName.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -84,9 +99,30 @@ fun LibraryScreen(
                 fontSize = 13.sp
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            if (romList.isEmpty()) {
+            if (savedRoms.isNotEmpty()) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Pesquisar na biblioteca...", color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = GbaSecondary,
+                        unfocusedBorderColor = Color(0xFF2C2449),
+                        focusedContainerColor = GbaCard,
+                        unfocusedContainerColor = GbaCard,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (filteredRoms.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -103,14 +139,14 @@ fun LibraryScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Nenhuma ROM carregada ainda",
+                            text = if (searchQuery.isNotBlank()) "Nenhum jogo encontrado" else "Nenhuma ROM carregada ainda",
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             fontSize = 18.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Toque no botão abaixo para escolher uma ROM (.gba ou .zip) do armazenamento do seu aparelho.",
+                            text = if (searchQuery.isNotBlank()) "Tente buscar com outro termo." else "Toque no botão abaixo para escolher uma ROM (.gba ou .zip) do armazenamento do seu aparelho.",
                             color = Color.Gray,
                             fontSize = 13.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -118,10 +154,14 @@ fun LibraryScreen(
                     }
                 }
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                    columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(minSize = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(romList) { rom ->
+                    items(filteredRoms.size) { index ->
+                        val rom = filteredRoms[index]
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -135,20 +175,49 @@ fun LibraryScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
+                                    .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // Capa do Jogo (BoxArt / Ícone RA)
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF1E1A2E)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (!rom.badgeIconUrl.isNullOrBlank()) {
+                                        coil.compose.AsyncImage(
+                                            model = rom.badgeIconUrl,
+                                            contentDescription = rom.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = null,
+                                            tint = GbaSecondary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.width(12.dp))
+
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = rom.title,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
-                                        fontSize = 16.sp
+                                        fontSize = 15.sp,
+                                        maxLines = 1
                                     )
                                     Text(
-                                        text = "MD5: ${rom.md5Hash.take(8)}...",
+                                        text = rom.fileName,
                                         color = Color.Gray,
-                                        fontSize = 11.sp
+                                        fontSize = 11.sp,
+                                        maxLines = 1
                                     )
                                 }
 
@@ -175,4 +244,3 @@ fun LibraryScreen(
         }
     }
 }
-

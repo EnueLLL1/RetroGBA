@@ -47,12 +47,26 @@ class RetroAchievementsRepository(
     }
 
     suspend fun getAchievements(gameId: Long): Result<Pair<GameInfo, List<Achievement>>> {
-        return api.getGameAchievements(gameId)
+        val user = preferences.username
+        val token = preferences.token ?: preferences.webApiKey
+        return api.getGameAchievements(gameId, user, token)
+    }
+
+    suspend fun startSession(gameId: Long, romHash: String): Result<Set<Long>> {
+        val user = preferences.username ?: return Result.failure(Exception("Usuário não logado"))
+        val token = preferences.token ?: preferences.webApiKey ?: return Result.failure(Exception("Token não encontrado"))
+        return api.startSession(user, token, gameId, romHash, preferences.isHardcoreMode)
+    }
+
+    suspend fun ping(gameId: Long, richPresence: String? = null): Result<Boolean> {
+        val user = preferences.username ?: return Result.failure(Exception("Usuário não logado"))
+        val token = preferences.token ?: preferences.webApiKey ?: return Result.failure(Exception("Token não encontrado"))
+        return api.ping(user, token, gameId, richPresence)
     }
 
     suspend fun unlockAchievement(achievement: Achievement): Result<Boolean> {
         val user = preferences.username ?: return Result.failure(Exception("Usuário não logado"))
-        val token = preferences.token ?: return Result.failure(Exception("Token não encontrado"))
+        val token = preferences.token ?: preferences.webApiKey ?: return Result.failure(Exception("Token não encontrado"))
 
         val result = api.awardAchievement(
             username = user,
@@ -74,4 +88,3 @@ class RetroAchievementsRepository(
         return api.getUserProfile(user, key)
     }
 }
-

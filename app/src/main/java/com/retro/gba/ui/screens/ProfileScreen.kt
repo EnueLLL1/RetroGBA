@@ -17,16 +17,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.retro.gba.data.model.UserProfile
 import com.retro.gba.ui.theme.GbaBackground
 import com.retro.gba.ui.theme.GbaCard
 import com.retro.gba.ui.theme.GbaSecondary
+import com.retro.gba.ui.theme.RetroGBATheme
 import com.retro.gba.ui.theme.TrophyGold
 import com.retro.gba.ui.viewmodel.ProfileViewModel
+import com.retro.gba.util.AppLogger
 
 @Composable
 fun ProfileScreen(
@@ -43,6 +48,46 @@ fun ProfileScreen(
     val controllerOpacity by viewModel.controllerOpacity.collectAsState()
     val fastForwardSpeed by viewModel.fastForwardSpeed.collectAsState()
 
+    ProfileScreenContent(
+        isLoggedIn = isLoggedIn,
+        username = username,
+        userProfile = userProfile,
+        isHardcore = isHardcore,
+        isLoading = isLoading,
+        errorMessage = errorMessage,
+        hapticFeedback = hapticFeedback,
+        controllerOpacity = controllerOpacity,
+        fastForwardSpeed = fastForwardSpeed,
+        onHardcoreChange = { viewModel.setHardcore(it) },
+        onControllerOpacityChange = { viewModel.setControllerOpacity(it) },
+        onHapticFeedbackChange = { viewModel.setHapticFeedback(it) },
+        onFastForwardSpeedChange = { viewModel.setFastForwardSpeed(it) },
+        onLogout = { viewModel.logout() },
+        onLogin = { user, pass -> viewModel.login(user, pass) },
+        modifier = modifier
+    )
+}
+
+@Composable
+fun ProfileScreenContent(
+    isLoggedIn: Boolean,
+    username: String,
+    userProfile: UserProfile?,
+    isHardcore: Boolean,
+    isLoading: Boolean,
+    errorMessage: String?,
+    hapticFeedback: Boolean,
+    controllerOpacity: Float,
+    fastForwardSpeed: Float,
+    onHardcoreChange: (Boolean) -> Unit,
+    onControllerOpacityChange: (Float) -> Unit,
+    onHapticFeedbackChange: (Boolean) -> Unit,
+    onFastForwardSpeedChange: (Float) -> Unit,
+    onLogout: () -> Unit,
+    onLogin: (String, String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
     var inputUser by remember { mutableStateOf("") }
     var inputPass by remember { mutableStateOf("") }
 
@@ -74,7 +119,7 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
             ) {
                 Text(
-                    text = errorMessage ?: "",
+                    text = errorMessage,
                     color = Color(0xFFFF8A80),
                     modifier = Modifier.padding(12.dp),
                     fontSize = 13.sp
@@ -103,7 +148,7 @@ fun ProfileScreen(
                     ) {
                         if (!userProfile?.avatarUrl.isNullOrBlank()) {
                             AsyncImage(
-                                model = userProfile!!.avatarUrl,
+                                model = userProfile.avatarUrl,
                                 contentDescription = "Avatar",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
@@ -178,7 +223,7 @@ fun ProfileScreen(
                         }
                         Switch(
                             checked = isHardcore,
-                            onCheckedChange = { viewModel.setHardcore(it) }
+                            onCheckedChange = onHardcoreChange
                         )
                     }
                 }
@@ -219,7 +264,7 @@ fun ProfileScreen(
                         }
                         Slider(
                             value = controllerOpacity,
-                            onValueChange = { viewModel.setControllerOpacity(it) },
+                            onValueChange = onControllerOpacityChange,
                             valueRange = 0.2f..1.0f,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -237,7 +282,7 @@ fun ProfileScreen(
                         }
                         Switch(
                             checked = hapticFeedback,
-                            onCheckedChange = { viewModel.setHapticFeedback(it) }
+                            onCheckedChange = onHapticFeedbackChange
                         )
                     }
 
@@ -251,7 +296,7 @@ fun ProfileScreen(
                             listOf(2.0f, 2.5f, 3.0f, 4.0f).forEach { speed ->
                                 FilterChip(
                                     selected = fastForwardSpeed == speed,
-                                    onClick = { viewModel.setFastForwardSpeed(speed) },
+                                    onClick = { onFastForwardSpeedChange(speed) },
                                     label = { Text("${speed}x", fontSize = 12.sp) },
                                     modifier = Modifier.weight(1f)
                                 )
@@ -261,10 +306,61 @@ fun ProfileScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Diagnóstico & Relatório de Erros
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = GbaCard),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "🐛 Diagnóstico & Envio de Erros",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        text = "Encontrou um bug ou problema no jogo? Copie ou envie o relatório de diagnósticos para ajudar a corrigir.",
+                        fontSize = 12.sp,
+                        color = Color.LightGray
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { AppLogger.copyReportToClipboard(context) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Copiar", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { AppLogger.shareReport(context) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = GbaSecondary, contentColor = Color.Black)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Enviar", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedButton(
-                onClick = { viewModel.logout() },
+                onClick = onLogout,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252)),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -308,7 +404,7 @@ fun ProfileScreen(
                     )
 
                     Button(
-                        onClick = { viewModel.login(inputUser, inputPass) },
+                        onClick = { onLogin(inputUser, inputPass) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isLoading && inputUser.isNotBlank() && inputPass.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = GbaSecondary)
@@ -339,3 +435,56 @@ private fun ProfileStat(title: String, value: String) {
     }
 }
 
+@Preview(showBackground = true)
+@Composable
+fun ProfileScreenLoggedInPreview() {
+    RetroGBATheme {
+        ProfileScreenContent(
+            isLoggedIn = true,
+            username = "RetroGamer",
+            userProfile = UserProfile(
+                username = "RetroGamer",
+                totalPoints = 1250,
+                hardcorePoints = 850,
+                rank = 42,
+                avatarUrl = ""
+            ),
+            isHardcore = true,
+            isLoading = false,
+            errorMessage = null,
+            hapticFeedback = true,
+            controllerOpacity = 0.8f,
+            fastForwardSpeed = 2.0f,
+            onHardcoreChange = {},
+            onControllerOpacityChange = {},
+            onHapticFeedbackChange = {},
+            onFastForwardSpeedChange = {},
+            onLogout = {},
+            onLogin = { _, _ -> }
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ProfileScreenLoggedOutPreview() {
+    RetroGBATheme {
+        ProfileScreenContent(
+            isLoggedIn = false,
+            username = "",
+            userProfile = null,
+            isHardcore = false,
+            isLoading = false,
+            errorMessage = null,
+            hapticFeedback = true,
+            controllerOpacity = 0.8f,
+            fastForwardSpeed = 2.0f,
+            onHardcoreChange = {},
+            onControllerOpacityChange = {},
+            onHapticFeedbackChange = {},
+            onFastForwardSpeedChange = {},
+            onLogout = {},
+            onLogin = { _, _ -> }
+        )
+    }
+}

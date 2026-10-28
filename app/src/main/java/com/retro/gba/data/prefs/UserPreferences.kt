@@ -28,6 +28,7 @@ class UserPreferences(
         private const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
         private const val KEY_CONTROLLER_OPACITY = "controller_opacity"
         private const val KEY_FAST_FORWARD = "fast_forward_speed"
+        private const val KEY_SAVED_ROMS = "saved_roms_json"
     }
 
     var username: String?
@@ -104,6 +105,10 @@ class UserPreferences(
     var fastForwardSpeed: Float
         get() = prefs.getFloat(KEY_FAST_FORWARD, 2.0f)
         set(value) = prefs.edit().putFloat(KEY_FAST_FORWARD, value).apply()
+
+    var savedRomsJson: String?
+        get() = prefs.getString(KEY_SAVED_ROMS, null)
+        set(value) = prefs.edit().putString(KEY_SAVED_ROMS, value).apply()
 
     fun isLoggedIn(): Boolean = !username.isNullOrBlank() && !token.isNullOrBlank()
 

@@ -2,10 +2,14 @@ package com.retro.gba.emulator
 
 import android.graphics.Bitmap
 import com.retro.gba.data.model.Achievement
-import kotlinx.coroutines.*
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.LockSupport
 
 /**
  * Motor nativo real de emulação do Game Boy Advance baseado no core mGBA (C/C++).
@@ -40,23 +44,23 @@ class NativeGbaEngine(
     override val isSimulationMode: Boolean = false
     override val isRunning: Boolean get() = _isRunning.get()
     override val isPaused: Boolean get() = _isPaused.get()
-    override var frameskip: Int = 0
+    @Volatile override var frameskip: Int = 0
     override val currentFps: Int get() = _currentFps.get()
 
-    private val _currentFps = java.util.concurrent.atomic.AtomicInteger(60)
+    private val _currentFps = AtomicInteger(60)
     private val _isRunning = AtomicBoolean(false)
     private val _isPaused = AtomicBoolean(false)
-    private var emulationJob: Job? = null
+    private var emulationExecutor: ExecutorService? = null
 
-    private var speedMultiplier: Float = 1.0f
-    private var currentButtons: Int = GbaInput.ALL_RELEASED
+    @Volatile private var speedMultiplier: Float = 1.0f
+    @Volatile private var currentButtons: Int = GbaInput.ALL_RELEASED
 
     // Double buffering de bitmaps para evitar novas alocações e garantir recomposição reativa no Compose
     private val frameBuffers: Array<Bitmap?> = arrayOfNulls(2)
     private var activeBufferIndex = 0
 
-    private var directVideoBuffer: ByteBuffer? = null
-    private var audioPlayer: GbaAudioPlayer? = null
+    @Volatile private var directVideoBuffer: ByteBuffer? = null
+    @Volatile private var audioPlayer: GbaAudioPlayer? = null
     private val audioSampleBuffer = ShortArray(AUDIO_CHUNK_SIZE)
 
     // Mapa de conquistas ativas monitoradas pelo rcheevos
@@ -64,6 +68,11 @@ class NativeGbaEngine(
 
     init {
         initBitmaps()
+        if (isNativeLibLoaded) {
+            try {
+                nativeInit()
+            } catch (_: Throwable) {}
+        }
     }
 
     private fun initBitmaps() {
@@ -84,6 +93,12 @@ class NativeGbaEngine(
 
         if (_isRunning.get()) {
             stop()
+        }
+
+        val initialized = nativeInit()
+        if (!initialized) {
+            android.util.Log.e("NativeGbaEngine", "Falha crítica: nativeInit() retornou false ao preparar carregamento da ROM")
+            return false
         }
 
         val loaded = nativeLoadRom(romBytes, romBytes.size)
@@ -125,73 +140,105 @@ class NativeGbaEngine(
 
         audioPlayer?.start()
 
-        emulationJob = CoroutineScope(Dispatchers.Default).launch {
-            val frameTimeNs = (1_000_000_000.0 / GBA_FPS).toLong()
-            var frameCounter = 0L
-            var fpsFramesCount = 0
-            var lastFpsCalcTime = System.currentTimeMillis()
+        emulationExecutor?.shutdownNow()
+        val executor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "GbaEmulationThread")
+        }
+        emulationExecutor = executor
 
-            while (_isRunning.get()) {
-                if (!_isPaused.get()) {
-                    val frameStartNs = System.nanoTime()
+        executor.execute {
+            try {
+                try {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+                } catch (_: Throwable) {}
 
-                    // 1. Executa instruções ARM7TDMI e rasterização PPU/APU para 1 frame + rcheevos
-                    nativeRunFrame()
-                    frameCounter++
+                var frameCounter = 0L
+                var fpsFramesCount = 0
+                var lastFpsCalcTime = System.currentTimeMillis()
 
-                    // 2. Renderização de vídeo via DirectBuffer com alternância de double-buffering e frameskip
-                    val shouldRenderVideo = (frameskip <= 0) || (frameCounter % (frameskip + 1) == 0L)
-                    if (shouldRenderVideo) {
-                        directVideoBuffer?.let { buffer ->
-                            buffer.rewind()
-                            val bmp = frameBuffers[activeBufferIndex]
-                            activeBufferIndex = 1 - activeBufferIndex
+                val baseFrameTimeNs = 1_000_000_000.0 / GBA_FPS
+                var nextFrameTargetNs = System.nanoTime()
 
-                            if (bmp != null) {
-                                bmp.copyPixelsFromBuffer(buffer)
-                                onFrameReady(bmp)
+                while (_isRunning.get()) {
+                    if (!_isPaused.get()) {
+                        // 1. Executa instruções ARM7TDMI e rasterização PPU/APU para 1 frame (1/60s) + rcheevos
+                        nativeRunFrame()
+                        frameCounter++
+
+                        // 2. Renderização de vídeo via DirectBuffer com alternância de double-buffering e frameskip
+                        val shouldRenderVideo = (frameskip <= 0) || (frameCounter % (frameskip + 1) == 0L)
+                        if (shouldRenderVideo) {
+                            directVideoBuffer?.let { buffer ->
+                                buffer.rewind()
+                                val bmp = frameBuffers[activeBufferIndex]
+                                activeBufferIndex = 1 - activeBufferIndex
+
+                                if (bmp != null) {
+                                    bmp.copyPixelsFromBuffer(buffer)
+                                    onFrameReady(bmp)
+                                }
+                            }
+                            fpsFramesCount++
+                        }
+
+                        // 3. Drena amostras de áudio PCM sintetizadas e envia ao AudioTrack
+                        audioPlayer?.let { player ->
+                            val readSamples = nativeGetAudioSamples(audioSampleBuffer, audioSampleBuffer.size)
+                            if (readSamples > 0) {
+                                player.writeSamples(audioSampleBuffer, readSamples)
                             }
                         }
-                        fpsFramesCount++
-                    }
 
-                    // 3. Drena amostras de áudio PCM sintetizadas e envia ao AudioTrack
-                    audioPlayer?.let { player ->
-                        val readSamples = nativeGetAudioSamples(audioSampleBuffer, audioSampleBuffer.size)
-                        if (readSamples > 0) {
-                            player.writeSamples(audioSampleBuffer, readSamples)
-                        }
-                    }
-
-                    // 4. Verifica se o rcheevos disparou o desbloqueio de alguma conquista
-                    val triggeredIds = nativeGetTriggeredAchievements()
-                    if (triggeredIds != null && triggeredIds.isNotEmpty()) {
-                        for (id in triggeredIds) {
-                            activeAchievementsMap[id]?.let { ach ->
-                                onAchievementTriggered(ach)
+                        // 4. Verifica se o rcheevos disparou o desbloqueio de alguma conquista
+                        val triggeredIds = nativeGetTriggeredAchievements()
+                        if (triggeredIds != null && triggeredIds.isNotEmpty()) {
+                            for (id in triggeredIds) {
+                                activeAchievementsMap[id]?.let { ach ->
+                                    onAchievementTriggered(ach)
+                                }
                             }
                         }
-                    }
 
-                    // 5. Atualização periódica da taxa de quadros (FPS) a cada segundo
-                    val nowMs = System.currentTimeMillis()
-                    if (nowMs - lastFpsCalcTime >= 1000L) {
-                        _currentFps.set(fpsFramesCount)
-                        fpsFramesCount = 0
-                        lastFpsCalcTime = nowMs
-                    }
+                        // 5. Atualização periódica da taxa de quadros (FPS) a cada segundo
+                        val nowMs = System.currentTimeMillis()
+                        if (nowMs - lastFpsCalcTime >= 1000L) {
+                            _currentFps.set(fpsFramesCount)
+                            fpsFramesCount = 0
+                            lastFpsCalcTime = nowMs
+                        }
 
-                    // 6. Temporização precisa baseada em nanosegundos
-                    val elapsedNs = System.nanoTime() - frameStartNs
-                    val targetNs = (frameTimeNs / speedMultiplier).toLong()
-                    val sleepNs = targetNs - elapsedNs
+                        // 6. Temporização de altíssima precisão com acumulador de tempo absoluto
+                        val frameTargetNs = (baseFrameTimeNs / speedMultiplier).toLong()
+                        nextFrameTargetNs += frameTargetNs
 
-                    if (sleepNs > 1_000_000L) { // Mais de 1ms restante
-                        delay(sleepNs / 1_000_000L)
+                        val nowNs = System.nanoTime()
+                        val sleepNs = nextFrameTargetNs - nowNs
+
+                        if (sleepNs < -50_000_000L) {
+                            // Reseta o relógio alvo se atrasou mais de 3 frames (~50ms)
+                            nextFrameTargetNs = nowNs
+                        } else if (sleepNs > 1_500_000L) {
+                            LockSupport.parkNanos(sleepNs - 1_000_000L)
+                        }
+
+                        // Spin-wait final para os nanosegundos sub-milissegundos restantes
+                        while (System.nanoTime() < nextFrameTargetNs) {
+                            Thread.yield()
+                        }
+                    } else {
+                        try {
+                            Thread.sleep(50)
+                        } catch (_: InterruptedException) {
+                            break
+                        }
+                        nextFrameTargetNs = System.nanoTime()
                     }
-                } else {
-                    delay(100)
                 }
+            } catch (t: Throwable) {
+                android.util.Log.e("NativeGbaEngine", "Erro crítico não tratado no loop de emulação", t)
+            } finally {
+                _isRunning.set(false)
+                audioPlayer?.pause()
             }
         }
     }
@@ -208,10 +255,24 @@ class NativeGbaEngine(
 
     override fun stop() {
         _isRunning.set(false)
-        emulationJob?.cancel()
+        val executor = emulationExecutor
+        emulationExecutor = null
+
+        if (executor != null) {
+            executor.shutdownNow()
+            try {
+                if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    android.util.Log.w("NativeGbaEngine", "Aviso: Thread de emulação demorou mais de 1s para encerrar")
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
         audioPlayer?.stop()
         audioPlayer?.release()
         audioPlayer = null
+        directVideoBuffer = null
         activeAchievementsMap.clear()
 
         if (isNativeLibLoaded) {
@@ -273,6 +334,7 @@ class NativeGbaEngine(
     }
 
     // Declarações JNI nativas da ponte C++
+    private external fun nativeInit(): Boolean
     private external fun nativeLoadRom(romBytes: ByteArray, size: Int): Boolean
     private external fun nativeRunFrame()
     private external fun nativeSetButtons(buttons: Int)
