@@ -142,10 +142,12 @@ Para identificar o jogo no RetroAchievements:
 
 Quando o agente de IA estiver investigando lentidão, áudio picotando (*crackling*) ou travamentos (*crashes*), ele deve verificar estes 4 pontos na ponte Android/Nativo:
 
-### 4.1. Desacoplamento de Áudio e Vídeo no mGBA
-* O mGBA produz áudio na taxa nativa do GBA (tipicamente reamostrado pelo `blip_buf` interno do mGBA para $44100\text{ Hz}$ ou $48000\text{ Hz}$).
-* Se a *thread* de emulação sofrer variações de tempo (*jitter*) por causa de Garbage Collection do Android, locks de JNI ou chamadas do RetroAchievements, o buffer de áudio ficará vazio (*underrun*).
-* **Solução:** O buffer de áudio entre o `mCore` (`core->getAudioChannel` / `mAudioBuffer`) e o backend de áudio (`Oboe` / `OpenSL ES` / `AudioTrack` em modo `WRITE_NON_BLOCKING`) deve usar um *Ring Buffer* lock-free (ou com lock mínimo) com capacidade para pelo menos $2$ a $3\text{ frames}$ ($\approx 40\text{ ms}$ a $60\text{ ms}$) para absorver oscilações.
+### 4.1. Desacoplamento e Síntese de Áudio no mGBA (`blip_buf`)
+* O mGBA sintetiza áudio usando a biblioteca interna band-limited `blip_buf` (`blip_t* left`, `blip_t* right`), acessível via `s_core->getAudioChannel(s_core, 0)` e `(s_core, 1)`.
+* **SOUNDBIAS e Resampling Automático:** ROMs comerciais frequentemente alternam a resolução de áudio no registrador `REG_SOUNDBIAS` durante o boot (de 32768 Hz para 65536 Hz, 131072 Hz ou 262144 Hz). Nunca consuma callbacks avulsos de subamostras (`postAudioFrame`); configure as taxas com `blip_set_rates(channel, s_core->frequency(s_core), AUDIO_SAMPLE_RATE)` em `nativeInit` e após cada `s_core->reset(s_core)`.
+* O `blip_buf` realiza a filtragem anti-aliasing e o resampling para a taxa desejada (32768 Hz) de forma contínua.
+* Na JNI (`retrogba_jni.cpp`), a função `nativeGetAudioSamples` drena diretamente os canais nativos usando `blip_read_samples(left, buf, count, 1)` e `blip_read_samples(right, buf + 1, count, 1)` intercalando em estéreo sob `s_coreMutex`.
+* O `AudioTrack` em modo `WRITE_NON_BLOCKING` com buffer ampliado para `minBufferSize * 4` garante tolerância ao jitter de agendamento do Android sem sofrer underruns.
 
 ### 4.2. Prevenção de Vazamento de Referências Locais JNI (`ReferenceTable overflow`)
 * Toda vez que o código C/C++ chama `env->NewStringUTF(...)`, `env->FindClass(...)` ou `env->NewByteArray(...)` (por exemplo, ao enviar dados de conquistas, placares ou requisições HTTP para o Kotlin), o Android cria uma *Local Reference*.

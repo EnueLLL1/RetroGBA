@@ -98,4 +98,85 @@ class UserPreferencesControlsTest {
         assertNull(preferences.username)
         assertNull(preferences.token)
     }
+
+    @Test
+    fun controllerScale_defaultsTo1f_andUpdatesProperly() {
+        assertEquals(1.0f, preferences.controllerScale, 0.01f)
+
+        preferences.controllerScale = 1.25f
+        assertEquals(1.25f, preferences.controllerScale, 0.01f)
+
+        preferences.controllerScale = 0.85f
+        assertEquals(0.85f, preferences.controllerScale, 0.01f)
+    }
+
+    @Test
+    fun controllerTheme_defaultsToCleanMyBoy_andUpdatesProperly() {
+        assertEquals(UserPreferences.THEME_CLEAN_MYBOY, preferences.controllerTheme)
+
+        preferences.controllerTheme = UserPreferences.THEME_RETRO_GBA
+        assertEquals(UserPreferences.THEME_RETRO_GBA, preferences.controllerTheme)
+
+        preferences.controllerTheme = UserPreferences.THEME_CLEAN_MYBOY
+        assertEquals(UserPreferences.THEME_CLEAN_MYBOY, preferences.controllerTheme)
+    }
+
+    @Test
+    fun quickSaveLoadAndAbCombo_defaultToTrue_andToggleProperly() {
+        assertTrue(preferences.showQuickSaveLoad)
+        assertTrue(preferences.showAbCombo)
+
+        preferences.showQuickSaveLoad = false
+        preferences.showAbCombo = false
+        assertFalse(preferences.showQuickSaveLoad)
+        assertFalse(preferences.showAbCombo)
+
+        preferences.showQuickSaveLoad = true
+        preferences.showAbCombo = true
+        assertTrue(preferences.showQuickSaveLoad)
+        assertTrue(preferences.showAbCombo)
+    }
+
+    @Test
+    fun controlOffsets_persistIndependentlyForPortraitAndLandscape_andResetProperly() {
+        // Inicialmente vazios
+        assertTrue(preferences.getControlOffsets(isLandscape = false).isEmpty())
+        assertTrue(preferences.getControlOffsets(isLandscape = true).isEmpty())
+
+        val portraitOffsets = mapOf(
+            "dpad" to Pair(12.5f, -8.0f),
+            "ab_cluster" to Pair(-15.0f, 20.0f)
+        )
+        val landscapeOffsets = mapOf(
+            "dpad" to Pair(25.0f, 0.0f),
+            "ab_cluster" to Pair(-30.0f, -10.0f)
+        )
+
+        preferences.setControlOffsets(isLandscape = false, portraitOffsets)
+        preferences.setControlOffsets(isLandscape = true, landscapeOffsets)
+
+        val loadedPortrait = preferences.getControlOffsets(isLandscape = false)
+        val loadedLandscape = preferences.getControlOffsets(isLandscape = true)
+
+        assertEquals(2, loadedPortrait.size)
+        assertEquals(12.5f, loadedPortrait["dpad"]!!.first, 0.01f)
+        assertEquals(-8.0f, loadedPortrait["dpad"]!!.second, 0.01f)
+        assertEquals(-15.0f, loadedPortrait["ab_cluster"]!!.first, 0.01f)
+        assertEquals(20.0f, loadedPortrait["ab_cluster"]!!.second, 0.01f)
+
+        assertEquals(2, loadedLandscape.size)
+        assertEquals(25.0f, loadedLandscape["dpad"]!!.first, 0.01f)
+        assertEquals(0.0f, loadedLandscape["dpad"]!!.second, 0.01f)
+        assertEquals(-30.0f, loadedLandscape["ab_cluster"]!!.first, 0.01f)
+        assertEquals(-10.0f, loadedLandscape["ab_cluster"]!!.second, 0.01f)
+
+        // Reset apenas do Portrait não deve afetar o Landscape
+        preferences.resetControlOffsets(isLandscape = false)
+        assertTrue(preferences.getControlOffsets(isLandscape = false).isEmpty())
+        assertEquals(2, preferences.getControlOffsets(isLandscape = true).size)
+
+        // Reset do Landscape
+        preferences.resetControlOffsets(isLandscape = true)
+        assertTrue(preferences.getControlOffsets(isLandscape = true).isEmpty())
+    }
 }

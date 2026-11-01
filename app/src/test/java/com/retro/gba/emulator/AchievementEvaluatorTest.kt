@@ -85,4 +85,55 @@ class AchievementEvaluatorTest {
         assertEquals(1, triggered.size)
         assertEquals(103L, triggered[0].id)
     }
+
+    @Test
+    fun testDeltaConditionEvaluation() {
+        val deltaAch = Achievement(
+            id = 104L,
+            title = "Level Up Delta",
+            description = "Passou do nível 0 para 1",
+            points = 5,
+            badgeName = "00104",
+            memAddr = "d0xH02000000=0_0xH02000000=1"
+        )
+
+        evaluator.loadAchievements(listOf(deltaAch))
+
+        // Frame 0: memória é 0. O valor atual não satisfaz a segunda condição (== 1)
+        memory.write8(0x02000000L, 0)
+        assertTrue(evaluator.evaluateFrame(memory).isEmpty())
+
+        // Frame 1: memória muda para 1. O delta anterior é 0 e o valor atual é 1 -> dispara
+        memory.write8(0x02000000L, 1)
+        val triggered = evaluator.evaluateFrame(memory)
+        assertEquals(1, triggered.size)
+        assertEquals(104L, triggered[0].id)
+    }
+
+    @Test
+    fun testMalformedConditionsRejection() {
+        // Sub-condição com alvo não suportado ou sintaxe inválida não deve desbloquear parcialmente
+        val malformedAch1 = Achievement(
+            id = 105L,
+            title = "Malformed Target Address",
+            description = "Alvo com formato inválido",
+            points = 5,
+            badgeName = "00105",
+            memAddr = "0xH02000000=0xH02000001"
+        )
+        val malformedAch2 = Achievement(
+            id = 106L,
+            title = "Partial Invalid Token",
+            description = "Token inválido após condição válida",
+            points = 5,
+            badgeName = "00106",
+            memAddr = "0xH02000000=1_INVALIDO"
+        )
+
+        evaluator.loadAchievements(listOf(malformedAch1, malformedAch2))
+
+        memory.write8(0x02000000L, 1)
+        val triggered = evaluator.evaluateFrame(memory)
+        assertTrue("Condições malformadas devem ser rejeitadas integralmente", triggered.isEmpty())
+    }
 }

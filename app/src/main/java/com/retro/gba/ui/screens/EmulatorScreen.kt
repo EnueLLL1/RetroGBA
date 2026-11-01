@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +21,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.retro.gba.data.prefs.UserPreferences
+import com.retro.gba.emulator.GbaInput
 import com.retro.gba.ui.components.AchievementOverlay
 import com.retro.gba.ui.components.GbaScreenCanvas
 import com.retro.gba.ui.components.VirtualController
@@ -50,6 +54,14 @@ fun EmulatorScreen(
     val currentFps by viewModel.currentFps.collectAsState()
     val cheats by viewModel.cheats.collectAsState()
     val isHardcore = viewModel.raRepository.isHardcore()
+
+    val controllerScale by viewModel.controllerScale.collectAsState()
+    val controllerTheme by viewModel.controllerTheme.collectAsState()
+    val showQuickSaveLoad by viewModel.showQuickSaveLoad.collectAsState()
+    val showAbCombo by viewModel.showAbCombo.collectAsState()
+    val isLayoutEditMode by viewModel.isLayoutEditMode.collectAsState()
+    val portraitOffsets by viewModel.portraitOffsets.collectAsState()
+    val landscapeOffsets by viewModel.landscapeOffsets.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -107,13 +119,83 @@ fun EmulatorScreen(
                             .padding(vertical = 4.dp)
                     )
 
+                    // HUD compacto discreto no canto superior esquerdo (FPS e indicador Turbo)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 12.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            color = Color(0x991B192A),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "$currentFps FPS",
+                                color = if (currentFps >= 50) Color(0xFF81C784) else Color(0xFFFFB74D),
+                                fontSize = 10.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        if (isEcoMode) {
+                            Surface(
+                                color = Color(0x991B3B24),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "🍃 ECO",
+                                    color = Color(0xFFA5D6A7),
+                                    fontSize = 10.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (isTurbo) {
+                            Surface(
+                                color = Color(0x992C2449),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
+                                    color = GbaSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
                     VirtualController(
                         onButtonChange = { mask, pressed ->
                             viewModel.gbaCore.setButtonPressed(mask, pressed)
                         },
-                        onMenuClick = { showMenuSheet = true },
+                        onMenuClick = {
+                            viewModel.gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
+                            showMenuSheet = true
+                        },
                         onTurboToggle = { viewModel.toggleTurbo() },
                         opacity = controllerOpacity,
+                        scale = controllerScale,
+                        theme = controllerTheme,
+                        showQuickSaveLoad = showQuickSaveLoad,
+                        showAbCombo = showAbCombo,
+                        isTurboActive = isTurbo,
+                        isEditMode = isLayoutEditMode,
+                        offsets = landscapeOffsets,
+                        onOffsetChange = { id, dx, dy ->
+                            viewModel.updateControlOffset(id, isLandscape = true, dx, dy)
+                        },
+                        onResetLayout = { viewModel.resetLayoutOffsets(isLandscape = true) },
+                        onExitEditMode = { viewModel.setLayoutEditMode(false) },
+                        onScaleChange = { viewModel.setControllerScale(it) },
+                        onQuickSave = { viewModel.quickSave() },
+                        onQuickLoad = { viewModel.quickLoad() },
                         hapticFeedbackEnabled = hapticFeedbackEnabled,
                         isLandscape = true,
                         modifier = Modifier.fillMaxSize()
@@ -162,7 +244,7 @@ fun EmulatorScreen(
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Surface(
                                 color = Color(0xFF1B192A),
@@ -193,11 +275,30 @@ fun EmulatorScreen(
                             }
 
                             if (isTurbo) {
+                                Surface(
+                                    color = Color(0xFF2C2449),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
+                                        color = GbaSecondary,
+                                        fontSize = 10.sp,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                color = Color(0xFF25213B),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
                                 Text(
-                                    text = "⚡ TURBO ${"%.1f".format(fastForwardSpeed)}x",
-                                    color = GbaSecondary,
-                                    fontSize = 11.sp,
-                                    style = MaterialTheme.typography.labelMedium
+                                    text = "SLOT $activeSlot",
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
@@ -211,19 +312,37 @@ fun EmulatorScreen(
                             .padding(horizontal = 8.dp)
                     )
 
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    // Controles Virtuais Táteis
+                    // Controles Virtuais ocupando todo o espaço inferior restante
                     VirtualController(
                         onButtonChange = { mask, pressed ->
                             viewModel.gbaCore.setButtonPressed(mask, pressed)
                         },
-                        onMenuClick = { showMenuSheet = true },
+                        onMenuClick = {
+                            viewModel.gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
+                            showMenuSheet = true
+                        },
                         onTurboToggle = { viewModel.toggleTurbo() },
                         opacity = controllerOpacity,
+                        scale = controllerScale,
+                        theme = controllerTheme,
+                        showQuickSaveLoad = showQuickSaveLoad,
+                        showAbCombo = showAbCombo,
+                        isTurboActive = isTurbo,
+                        isEditMode = isLayoutEditMode,
+                        offsets = portraitOffsets,
+                        onOffsetChange = { id, dx, dy ->
+                            viewModel.updateControlOffset(id, isLandscape = false, dx, dy)
+                        },
+                        onResetLayout = { viewModel.resetLayoutOffsets(isLandscape = false) },
+                        onExitEditMode = { viewModel.setLayoutEditMode(false) },
+                        onScaleChange = { viewModel.setControllerScale(it) },
+                        onQuickSave = { viewModel.quickSave() },
+                        onQuickLoad = { viewModel.quickLoad() },
                         hapticFeedbackEnabled = hapticFeedbackEnabled,
                         isLandscape = false,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
                     )
                 }
             }
@@ -234,7 +353,7 @@ fun EmulatorScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
-            // Menu Rápido Inferior (Bottom Sheet com Gerenciador de Saves)
+            // Menu Rápido Inferior (Bottom Sheet com Gerenciador de Saves e Controles)
             if (showMenuSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showMenuSheet = false },
@@ -243,6 +362,7 @@ fun EmulatorScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
                             .padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
@@ -344,12 +464,82 @@ fun EmulatorScreen(
 
                         HorizontalDivider(color = Color.DarkGray)
 
-                        // Configurações de Controles Táteis e Interface
+                        // Configurações de Controles Táteis e Interface Estilo My Boy!
                         Text(
                             text = "Ajustes de Controles & Gameplay",
                             style = MaterialTheme.typography.titleSmall,
                             color = Color.White
                         )
+
+                        // Botão de Destaque: Editar Layout e Posição dos Controles
+                        Button(
+                            onClick = {
+                                showMenuSheet = false
+                                viewModel.setLayoutEditMode(true)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = GbaSecondary)
+                        ) {
+                            Icon(Icons.Default.DashboardCustomize, contentDescription = null, tint = Color.Black)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Editar Layout e Posição dos Controles",
+                                color = Color.Black,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                        }
+
+                        // Seletor de Tema Visual dos Controles
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Tema Visual dos Controles:",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = controllerTheme == UserPreferences.THEME_CLEAN_MYBOY,
+                                    onClick = { viewModel.setControllerTheme(UserPreferences.THEME_CLEAN_MYBOY) },
+                                    label = { Text("My Boy! Clean", fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = controllerTheme == UserPreferences.THEME_RETRO_GBA,
+                                    onClick = { viewModel.setControllerTheme(UserPreferences.THEME_RETRO_GBA) },
+                                    label = { Text("Retrô GBA", fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // Slider de Tamanho dos Controles (Escala)
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Tamanho dos Controles (Escala):",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                                Text(
+                                    text = "${(controllerScale * 100).toInt()}%",
+                                    fontSize = 12.sp,
+                                    color = GbaSecondary,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                )
+                            }
+                            Slider(
+                                value = controllerScale,
+                                onValueChange = { viewModel.setControllerScale(it) },
+                                valueRange = 0.75f..1.45f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
                         // Slider de Opacidade dos Controles
                         Column {
@@ -377,13 +567,61 @@ fun EmulatorScreen(
                             )
                         }
 
+                        // Switch para Botão Combo A+B
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Botão Combo A+B",
+                                    fontSize = 13.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Exibe botão central que aciona A e B simultaneamente",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = showAbCombo,
+                                onCheckedChange = { viewModel.setShowAbCombo(it) }
+                            )
+                        }
+
+                        // Switch para Atalhos Rápidos (Quick Save / Quick Load)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Atalhos Rápidos (Quick Save / Quick Load)",
+                                    fontSize = 13.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Botões de salvar/carregar rápido na barra de ação",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = showQuickSaveLoad,
+                                onCheckedChange = { viewModel.setShowQuickSaveLoad(it) }
+                            )
+                        }
+
                         // Switch de Feedback Háptico (Vibração)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Vibração ao Tocar (Háptico)",
                                     fontSize = 13.sp,

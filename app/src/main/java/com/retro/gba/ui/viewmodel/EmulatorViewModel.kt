@@ -14,7 +14,7 @@ import com.retro.gba.data.repository.RetroAchievementsRepository
 import com.retro.gba.data.repository.RomRepository
 import com.retro.gba.data.repository.SaveRepository
 import com.retro.gba.data.repository.SaveStateInfo
-import com.retro.gba.emulator.GbaCore
+import com.retro.gba.emulator.GbaInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,6 +80,27 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     private val _fastForwardSpeed = MutableStateFlow(userPrefs.fastForwardSpeed)
     val fastForwardSpeed: StateFlow<Float> = _fastForwardSpeed.asStateFlow()
 
+    private val _controllerScale = MutableStateFlow(userPrefs.controllerScale)
+    val controllerScale: StateFlow<Float> = _controllerScale.asStateFlow()
+
+    private val _controllerTheme = MutableStateFlow(userPrefs.controllerTheme)
+    val controllerTheme: StateFlow<String> = _controllerTheme.asStateFlow()
+
+    private val _showQuickSaveLoad = MutableStateFlow(userPrefs.showQuickSaveLoad)
+    val showQuickSaveLoad: StateFlow<Boolean> = _showQuickSaveLoad.asStateFlow()
+
+    private val _showAbCombo = MutableStateFlow(userPrefs.showAbCombo)
+    val showAbCombo: StateFlow<Boolean> = _showAbCombo.asStateFlow()
+
+    private val _isLayoutEditMode = MutableStateFlow(false)
+    val isLayoutEditMode: StateFlow<Boolean> = _isLayoutEditMode.asStateFlow()
+
+    private val _portraitOffsets = MutableStateFlow(userPrefs.getControlOffsets(isLandscape = false))
+    val portraitOffsets: StateFlow<Map<String, Pair<Float, Float>>> = _portraitOffsets.asStateFlow()
+
+    private val _landscapeOffsets = MutableStateFlow(userPrefs.getControlOffsets(isLandscape = true))
+    val landscapeOffsets: StateFlow<Map<String, Pair<Float, Float>>> = _landscapeOffsets.asStateFlow()
+
     val engine: com.retro.gba.emulator.IGbaEngine = if (com.retro.gba.emulator.NativeGbaEngine.isNativeAvailable()) {
         com.retro.gba.emulator.NativeGbaEngine(
             onFrameReady = { bmp -> _currentFrame.value = bmp },
@@ -135,6 +156,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onAppPause() {
+        gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
         if (gbaCore.isRunning && !gbaCore.isPaused) {
             gbaCore.pause()
             _currentGame.value?.let { game ->
@@ -289,6 +311,66 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         if (_isTurboActive.value) {
             engine.setSpeedMultiplier(clamped)
         }
+    }
+
+    fun setControllerScale(scale: Float) {
+        val clamped = scale.coerceIn(0.75f, 1.45f)
+        _controllerScale.value = clamped
+        userPrefs.controllerScale = clamped
+    }
+
+    fun setControllerTheme(theme: String) {
+        _controllerTheme.value = theme
+        userPrefs.controllerTheme = theme
+    }
+
+    fun setShowQuickSaveLoad(enabled: Boolean) {
+        _showQuickSaveLoad.value = enabled
+        userPrefs.showQuickSaveLoad = enabled
+    }
+
+    fun setShowAbCombo(enabled: Boolean) {
+        _showAbCombo.value = enabled
+        userPrefs.showAbCombo = enabled
+    }
+
+    fun setLayoutEditMode(enabled: Boolean) {
+        gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
+        _isLayoutEditMode.value = enabled
+    }
+
+    fun updateControlOffset(id: String, isLandscape: Boolean, dxDp: Float, dyDp: Float) {
+        val clampedDx = dxDp.coerceIn(-280f, 280f)
+        val clampedDy = dyDp.coerceIn(-280f, 280f)
+        if (isLandscape) {
+            val updated = _landscapeOffsets.value.toMutableMap()
+            updated[id] = Pair(clampedDx, clampedDy)
+            _landscapeOffsets.value = updated
+            userPrefs.setControlOffsets(isLandscape = true, updated)
+        } else {
+            val updated = _portraitOffsets.value.toMutableMap()
+            updated[id] = Pair(clampedDx, clampedDy)
+            _portraitOffsets.value = updated
+            userPrefs.setControlOffsets(isLandscape = false, updated)
+        }
+    }
+
+    fun resetLayoutOffsets(isLandscape: Boolean) {
+        userPrefs.resetControlOffsets(isLandscape)
+        if (isLandscape) {
+            _landscapeOffsets.value = emptyMap()
+        } else {
+            _portraitOffsets.value = emptyMap()
+        }
+        _statusMessage.value = "Layout dos controles restaurado para o padrão"
+    }
+
+    fun quickSave() {
+        saveState(_activeStateSlot.value)
+    }
+
+    fun quickLoad() {
+        loadState(_activeStateSlot.value)
     }
 
     fun selectSlot(slot: Int) {

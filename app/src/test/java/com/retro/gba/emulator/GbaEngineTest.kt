@@ -37,11 +37,23 @@ class GbaEngineTest {
         engine.setButtonPressed(GbaInput.BUTTON_A, true)
         engine.setButtonPressed(GbaInput.BUTTON_A, false)
 
-        // Save State & Load State
+        // Save State & Load State com persistência de memória e restauração de player/score
+        engine.memory.write8(0x02000000L, 88)
+        engine.memory.write8(0x02000001L, 44)
+        engine.memory.write16(0x02000002L, 300)
+
         val stateBytes = engine.saveState()
         assertNotNull(stateBytes)
         assertTrue(stateBytes!!.isNotEmpty())
+
+        engine.playerX = 10
+        engine.playerY = 20
+        engine.score = 0
+
         assertTrue(engine.loadState(stateBytes))
+        assertEquals(88, engine.playerX)
+        assertEquals(44, engine.playerY)
+        assertEquals(300, engine.score)
 
         // Rejection of invalid short state
         assertFalse(engine.loadState(ByteArray(10)))

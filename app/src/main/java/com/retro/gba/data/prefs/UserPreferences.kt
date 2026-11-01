@@ -29,6 +29,16 @@ class UserPreferences(
         private const val KEY_CONTROLLER_OPACITY = "controller_opacity"
         private const val KEY_FAST_FORWARD = "fast_forward_speed"
         private const val KEY_SAVED_ROMS = "saved_roms_json"
+
+        const val KEY_CONTROLLER_SCALE = "controller_scale"
+        const val KEY_CONTROLLER_THEME = "controller_theme"
+        const val KEY_SHOW_QUICK_SAVE_LOAD = "show_quick_save_load"
+        const val KEY_SHOW_AB_COMBO = "show_ab_combo"
+        const val KEY_PORTRAIT_OFFSETS = "portrait_layout_offsets"
+        const val KEY_LANDSCAPE_OFFSETS = "landscape_layout_offsets"
+
+        const val THEME_CLEAN_MYBOY = "CLEAN_MYBOY"
+        const val THEME_RETRO_GBA = "RETRO_GBA"
     }
 
     var username: String?
@@ -109,6 +119,56 @@ class UserPreferences(
     var savedRomsJson: String?
         get() = prefs.getString(KEY_SAVED_ROMS, null)
         set(value) = prefs.edit().putString(KEY_SAVED_ROMS, value).apply()
+
+    var controllerScale: Float
+        get() = prefs.getFloat(KEY_CONTROLLER_SCALE, 1.0f)
+        set(value) = prefs.edit().putFloat(KEY_CONTROLLER_SCALE, value).apply()
+
+    var controllerTheme: String
+        get() = prefs.getString(KEY_CONTROLLER_THEME, THEME_CLEAN_MYBOY) ?: THEME_CLEAN_MYBOY
+        set(value) = prefs.edit().putString(KEY_CONTROLLER_THEME, value).apply()
+
+    var showQuickSaveLoad: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_QUICK_SAVE_LOAD, true)
+        set(value) = prefs.edit().putBoolean(KEY_SHOW_QUICK_SAVE_LOAD, value).apply()
+
+    var showAbCombo: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_AB_COMBO, true)
+        set(value) = prefs.edit().putBoolean(KEY_SHOW_AB_COMBO, value).apply()
+
+    fun getControlOffsets(isLandscape: Boolean): Map<String, Pair<Float, Float>> {
+        val key = if (isLandscape) KEY_LANDSCAPE_OFFSETS else KEY_PORTRAIT_OFFSETS
+        val raw = prefs.getString(key, null) ?: return emptyMap()
+        if (raw.isBlank()) return emptyMap()
+
+        val result = mutableMapOf<String, Pair<Float, Float>>()
+        raw.split(";").forEach { item ->
+            val parts = item.split(":")
+            if (parts.size == 2) {
+                val id = parts[0]
+                val coords = parts[1].split(",")
+                if (coords.size == 2) {
+                    val dx = coords[0].toFloatOrNull()
+                    val dy = coords[1].toFloatOrNull()
+                    if (dx != null && dy != null) {
+                        result[id] = Pair(dx, dy)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    fun setControlOffsets(isLandscape: Boolean, offsets: Map<String, Pair<Float, Float>>) {
+        val key = if (isLandscape) KEY_LANDSCAPE_OFFSETS else KEY_PORTRAIT_OFFSETS
+        val serialized = offsets.entries.joinToString(";") { "${it.key}:${it.value.first},${it.value.second}" }
+        prefs.edit().putString(key, serialized).apply()
+    }
+
+    fun resetControlOffsets(isLandscape: Boolean) {
+        val key = if (isLandscape) KEY_LANDSCAPE_OFFSETS else KEY_PORTRAIT_OFFSETS
+        prefs.edit().remove(key).apply()
+    }
 
     fun isLoggedIn(): Boolean = !username.isNullOrBlank() && !token.isNullOrBlank()
 

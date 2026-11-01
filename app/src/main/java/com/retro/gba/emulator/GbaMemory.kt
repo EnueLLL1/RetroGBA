@@ -16,12 +16,6 @@ class GbaMemory {
         ioRegs[0x131] = 0x03.toByte()
     }
 
-    // 96KB VRAM (0x06000000)
-    val vram = ByteArray(96 * 1024)
-
-    // 1KB OAM (0x07000000)
-    val oam = ByteArray(1024)
-
     // ROM buffer
     var rom: ByteArray = ByteArray(0)
 
@@ -86,4 +80,3 @@ class GbaMemory {
         write8(address + 1, (value shr 8) and 0xFF)
     }
 }
-

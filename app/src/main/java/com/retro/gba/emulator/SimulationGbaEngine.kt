@@ -27,7 +27,7 @@ class SimulationGbaEngine(
     override val isSimulationMode: Boolean = true
     override val isRunning: Boolean get() = _isRunning.get()
     override val isPaused: Boolean get() = _isPaused.get()
-    override var frameskip: Int = 0
+    @Volatile override var frameskip: Int = 0
     override val currentFps: Int get() = 60
 
     private val _isRunning = AtomicBoolean(false)
@@ -37,36 +37,33 @@ class SimulationGbaEngine(
     val memory = GbaMemory()
     private val evaluator = AchievementEvaluator()
 
-    private var currentButtons = GbaInput.ALL_RELEASED
-    private var speedMultiplier: Float = 1.0f
+    @Volatile private var currentButtons = GbaInput.ALL_RELEASED
+    @Volatile private var speedMultiplier: Float = 1.0f
 
     // Framebuffer
     private val pixels = IntArray(SCREEN_WIDTH * SCREEN_HEIGHT)
-    private var bitmap: Bitmap? = null
+    private val frameBuffers = arrayOfNulls<Bitmap>(2)
+    private var activeBufferIndex = 0
 
-    private fun getOrCreateBitmap(): Bitmap? {
-        if (bitmap == null) {
+    private fun nextBitmap(): Bitmap? {
+        val idx = activeBufferIndex
+        activeBufferIndex = 1 - idx
+        if (frameBuffers[idx] == null) {
             try {
-                bitmap = Bitmap.createBitmap(SCREEN_WIDTH, SCREEN_HEIGHT, Bitmap.Config.ARGB_8888)
-            } catch (e: Throwable) {
-                // Suporte a testes unitários na JVM
-            }
+                frameBuffers[idx] = Bitmap.createBitmap(SCREEN_WIDTH, SCREEN_HEIGHT, Bitmap.Config.ARGB_8888)
+            } catch (_: Throwable) {}
         }
-        return bitmap
+        return frameBuffers[idx]
     }
-
-    // Save states em memória da simulação
-    private var savedEwram: ByteArray? = null
-    private var savedIwram: ByteArray? = null
 
     // Game Metadata
     private var romTitle = "MODO SIMULACAO"
     private var romCode = "DEMO"
 
     // Interactive Player State
-    private var playerX = 120
-    private var playerY = 75
-    private var score = 0
+    internal var playerX = 120
+    internal var playerY = 75
+    internal var score = 0
 
     override fun loadRom(romBytes: ByteArray, achievements: List<Achievement>, saveBytes: ByteArray?): Boolean {
         if (romBytes.isEmpty()) return false
@@ -115,7 +112,7 @@ class SimulationGbaEngine(
                     }
 
                     // Renderiza o buffer de vídeo no Bitmap
-                    getOrCreateBitmap()?.let { bmp ->
+                    nextBitmap()?.let { bmp ->
                         bmp.setPixels(pixels, 0, SCREEN_WIDTH, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
                         onFrameReady(bmp)
                     }
@@ -161,26 +158,16 @@ class SimulationGbaEngine(
 
     override fun getSaveRam(): ByteArray? = null
 
-    override fun saveState(): ByteArray? {
-        savedEwram = memory.ewram.clone()
-        savedIwram = memory.iwram.clone()
-        return (savedEwram ?: ByteArray(0)) + (savedIwram ?: ByteArray(0))
-    }
+    override fun saveState(): ByteArray = memory.ewram + memory.iwram
 
     override fun loadState(stateBytes: ByteArray): Boolean {
         if (stateBytes.size < (memory.ewram.size + memory.iwram.size)) return false
         System.arraycopy(stateBytes, 0, memory.ewram, 0, memory.ewram.size)
         System.arraycopy(stateBytes, memory.ewram.size, memory.iwram, 0, memory.iwram.size)
+        playerX = memory.read8(0x02000000L)
+        playerY = memory.read8(0x02000001L)
+        score = memory.read16(0x02000002L)
         return true
-    }
-
-    override fun readMemory(address: Long, size: Int): Long {
-        return when (size) {
-            1 -> memory.read8(address).toLong()
-            2 -> memory.read16(address).toLong()
-            4 -> memory.read32(address)
-            else -> memory.read8(address).toLong()
-        }
     }
 
     override fun addCheat(description: String, code: String, type: Int, enabled: Boolean): Boolean {
@@ -188,8 +175,6 @@ class SimulationGbaEngine(
     }
 
     override fun clearCheats() {}
-
-    override fun setCheatEnabled(index: Int, enabled: Boolean) {}
 
     private fun runFrame(frameCount: Long) {
         // Atualiza chave de controle

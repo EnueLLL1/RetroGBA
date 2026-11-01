@@ -25,7 +25,7 @@ class NativeGbaEngine(
         const val SCREEN_WIDTH = 240
         const val SCREEN_HEIGHT = 160
         private const val GBA_FPS = 59.7275
-        private const val AUDIO_CHUNK_SIZE = 2048
+        private const val AUDIO_CHUNK_SIZE = 4096
 
         private var isNativeLibLoaded = false
 
@@ -68,11 +68,6 @@ class NativeGbaEngine(
 
     init {
         initBitmaps()
-        if (isNativeLibLoaded) {
-            try {
-                nativeInit()
-            } catch (_: Throwable) {}
-        }
     }
 
     private fun initBitmaps() {
@@ -116,6 +111,7 @@ class NativeGbaEngine(
         val sampleRate = nativeGetAudioSampleRate().takeIf { it > 0 } ?: GbaAudioPlayer.DEFAULT_SAMPLE_RATE
         audioPlayer?.release()
         audioPlayer = GbaAudioPlayer(sampleRate)
+        audioPlayer?.setSpeedMultiplier(speedMultiplier)
 
         // 2. Registra as conquistas no motor oficial rcheevos
         nativeClearAchievements()
@@ -193,7 +189,8 @@ class NativeGbaEngine(
                         val triggeredIds = nativeGetTriggeredAchievements()
                         if (triggeredIds != null && triggeredIds.isNotEmpty()) {
                             for (id in triggeredIds) {
-                                activeAchievementsMap[id]?.let { ach ->
+                                activeAchievementsMap.remove(id)?.let { ach ->
+                                    nativeDeactivateAchievement(id)
                                     onAchievementTriggered(ach)
                                 }
                             }
@@ -287,7 +284,7 @@ class NativeGbaEngine(
             currentButtons or buttonMask
         }
         if (isNativeLibLoaded) {
-            nativeSetButtons(currentButtons)
+            nativeSetButtons(currentButtons xor GbaInput.ALL_RELEASED)
         }
     }
 
@@ -311,11 +308,6 @@ class NativeGbaEngine(
         return nativeLoadState(stateBytes)
     }
 
-    override fun readMemory(address: Long, size: Int): Long {
-        if (!isNativeLibLoaded) return 0L
-        return nativeReadMemory(address, size)
-    }
-
     override fun addCheat(description: String, code: String, type: Int, enabled: Boolean): Boolean {
         if (!isNativeLibLoaded) return false
         return nativeAddCheat(description, code, type, enabled)
@@ -324,12 +316,6 @@ class NativeGbaEngine(
     override fun clearCheats() {
         if (isNativeLibLoaded) {
             nativeClearCheats()
-        }
-    }
-
-    override fun setCheatEnabled(index: Int, enabled: Boolean) {
-        if (isNativeLibLoaded) {
-            nativeSetCheatEnabled(index, enabled)
         }
     }
 
@@ -349,9 +335,7 @@ class NativeGbaEngine(
     private external fun nativeLoadSaveRam(saveBytes: ByteArray): Boolean
     private external fun nativeSaveState(): ByteArray?
     private external fun nativeLoadState(stateBytes: ByteArray): Boolean
-    private external fun nativeReadMemory(address: Long, size: Int): Long
     private external fun nativeAddCheat(description: String, code: String, type: Int, enabled: Boolean): Boolean
     private external fun nativeClearCheats()
-    private external fun nativeSetCheatEnabled(index: Int, enabled: Boolean)
     private external fun nativeDestroy()
 }

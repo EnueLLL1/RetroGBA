@@ -38,10 +38,8 @@ class AchievementEvaluator {
         // RetroAchievements divide sub-condições por '_' (AND)
         val tokens = memAddr.split("_")
         for (token in tokens) {
-            val cond = parseSingleCondition(token.trim())
-            if (cond != null) {
-                conditions.add(cond)
-            }
+            val cond = parseSingleCondition(token.trim()) ?: return emptyList()
+            conditions.add(cond)
         }
         return conditions
     }
@@ -92,9 +90,9 @@ class AchievementEvaluator {
         }
 
         val targetVal = if (rightPart.startsWith("0x", ignoreCase = true)) {
-            rightPart.substring(2).toLongOrNull(16) ?: 0L
+            rightPart.substring(2).toLongOrNull(16) ?: return null
         } else {
-            rightPart.toLongOrNull() ?: 0L
+            rightPart.toLongOrNull() ?: return null
         }
 
         return MemoryCondition(
@@ -126,8 +124,9 @@ class AchievementEvaluator {
                     else -> memory.read8(cond.address).toLong()
                 }
 
+                val key = (cond.address shl 3) or cond.size.toLong()
                 val checkVal = if (cond.isDelta) {
-                    previousMemoryValues[cond.address] ?: currentVal
+                    previousMemoryValues[key] ?: currentVal
                 } else {
                     currentVal
                 }
@@ -157,13 +156,16 @@ class AchievementEvaluator {
         // Atualizar snapshot anterior para condições 'delta'
         for ((_, conditions) in activeAchievements) {
             for (cond in conditions) {
-                val currentVal = when (cond.size) {
-                    1 -> memory.read8(cond.address).toLong()
-                    2 -> memory.read16(cond.address).toLong()
-                    4 -> memory.read32(cond.address)
-                    else -> memory.read8(cond.address).toLong()
+                if (cond.isDelta) {
+                    val key = (cond.address shl 3) or cond.size.toLong()
+                    val currentVal = when (cond.size) {
+                        1 -> memory.read8(cond.address).toLong()
+                        2 -> memory.read16(cond.address).toLong()
+                        4 -> memory.read32(cond.address)
+                        else -> memory.read8(cond.address).toLong()
+                    }
+                    previousMemoryValues[key] = currentVal
                 }
-                previousMemoryValues[cond.address] = currentVal
             }
         }
 

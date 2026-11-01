@@ -20,8 +20,8 @@ class GbaAudioPlayer(
     }
 
     private var audioTrack: AudioTrack? = null
-    private var isPlaying = false
-    private var isMuted = false
+    @Volatile private var isPlaying = false
+    @Volatile private var isMuted = false
 
     init {
         initAudioTrack()
@@ -49,7 +49,7 @@ class GbaAudioPlayer(
                         .setChannelMask(CHANNEL_CONFIG)
                         .build()
                 )
-                .setBufferSizeInBytes(minBufferSize * 2)
+                .setBufferSizeInBytes(minBufferSize * 4)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
         } catch (e: Throwable) {

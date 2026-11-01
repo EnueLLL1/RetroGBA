@@ -9,58 +9,50 @@ Este documento serve como **ponto de partida e memória técnica** para novas co
 - **Stack:**
   - **Linguagem Principal:** Kotlin + Jetpack Compose (Material 3).
   - **Core Nativo (C++):** mGBA emulado via NDK/CMake (`retrogba_jni.cpp`).
+  - **Resampling de Áudio:** Sintetizador band-limited nativo `blip_buf` do mGBA para Android `AudioTrack` em modo streaming a 32768 Hz.
   - **Conquistas:** RetroAchievements integrado com a biblioteca nativa `rcheevos`.
   - **Arquitetura:** MVVM, Coroutines, StateFlow, ViewModel com ciclo de vida Android.
 
 ---
 
-## 2. Histórico Recente e Último Commit
-- **Branch Atual:** `main` (sincronizada com `origin/main`).
-- **Último Commit Realizado:**
-  `ea70569` - *fix(emulator): corrigir integracao JNI mGBA, threading e persistencia de saves*
+## 2. Histórico Recente e Mudanças Críticas Realizadas
 
-### Problemas Críticos Resolvidos:
-1. **Crash / Use-After-Free no mGBA:**
-   - `core->deinit(core)` no mGBA libera internamente a estrutura (`free(core)`).
-   - O código anterior chamava `mCoreConfigDeinit(&s_core->config)` depois do `deinit`, causando corrupção de memória. A desinicialização agora é estritamente ordenada.
-2. **Concorrência e Thread Safety:**
-   - Acesso simultâneo ao mGBA (vídeo, áudio, cheats, conquistas) agora protegido por `s_coreMutex`.
-   - `currentButtons` convertido para `std::atomic<uint16_t>`.
-   - Swap atômico de conquistas disparadas com `s_achievementsMutex`.
-3. **Consumo Excessivo de RAM:**
-   - `s_romData` (cópia C++ dos bytes da ROM) é liberada imediatamente (`clear()` + `shrink_to_fit()`) após ser passada para o `VFileMemChunk` do mGBA, economizando dezenas de megabytes.
-4. **Perda de Save de Bateria (.sav):**
-   - Ao sair do app, `viewModelScope` é cancelado imediatamente.
-   - Implementado salvamento de bateria atômico com `withContext(NonCancellable)` e rotina bloqueante em `onCleared()` antes de `gbaCore.stop()`.
-5. **Validação:**
-   - `:app:assembleDebug` compilado com sucesso para ARM64-v8a e x86_64.
-   - Suíte de testes unitários (`:app:testDebugUnitTest`) 100% aprovada.
+### 2.1. Correção Definitiva do Pipeline de Áudio (mGBA + Android AudioTrack)
+1. **Causa Raiz Resolvida:**
+   - ROMs de GBA alteram dinamicamente a resolução do registrador `REG_SOUNDBIAS` no boot (de 32768 Hz para 65536 Hz, 131072 Hz ou 262144 Hz).
+   - O código legado usava `postAudioFrameCb` (que recebia ticks brutos de subamostras sem resampling), causando distorção no pitch (música grave/lenta), overflow de buffer e cortes severos de áudio.
+2. **Nova Arquitetura com `blip_buf`:**
+   - Eliminados `s_avStream`, `postAudioFrameCb`, `audioRateChangedCb` e o ring buffer manual intermediário `s_audioBuffer`.
+   - O áudio agora é configurado diretamente nos canais de síntese band-limited nativos do mGBA (`s_core->getAudioChannel(s_core, 0/1)`) via `blip_set_rates(ch, s_core->frequency(s_core), 32768)` em `nativeInit` e após `s_core->reset` em `nativeLoadRom`.
+   - `nativeGetAudioSamples` drena diretamente os buffers `blip_t*` via `blip_read_samples` intercalado em estéreo de forma síncrona sob `s_coreMutex`.
+   - `AUDIO_CHUNK_SIZE` em `NativeGbaEngine.kt` ampliado para 4096 shorts.
+   - Buffer do `AudioTrack` em `GbaAudioPlayer.kt` ampliado para `minBufferSize * 4` para blindagem contra jitter de agendamento de threads do Android.
+   - **Resultado Testado em Hardware:** Verificado em dispositivo físico com 0 underruns (`z:0`) e áudio perfeito.
 
----
-
-## 3. Ambiente de Desenvolvimento e Regras Ativas
-- **Sistema Operacional:** Windows.
-- **Diretrizes e Regras Salvas em `.agents/rules/`:**
-  - [`.agents/rules/advisor-protocol.md`](./.agents/rules/advisor-protocol.md): Protocolo de subagentes (3 exploradores + Advisor nas 3 travas).
-  - [`.agents/rules/windows-android-build.md`](./.agents/rules/windows-android-build.md): Exclusões do Microsoft Defender (`C:\dev`, `.gradle`, SDK Android, `Documents\antigravity`), tratamento de atributos read-only (`attrib -r -s`) e integridade de lockfiles do Git.
-- **Nota:** As regras na pasta `.agents/rules/` são carregadas **automaticamente** pelo Antigravity em qualquer nova conversa aberta neste projeto.
+### 2.2. Correção de Concorrência, JNI e Motores de Emulação
+1. **Polaridade dos Botões no GBA:**
+   - O GBA usa lógica ativa baixa (0 = pressionado, 1 = solto). Em `NativeGbaEngine.kt`, corrigida a inversão de polaridade com `currentButtons xor GbaInput.ALL_RELEASED`.
+2. **Ciclo de Vida e Desinicialização JNI:**
+   - `mCoreConfigDeinit(&s_core->config)` chamado estritamente ANTES de `s_core->deinit(s_core)` (evitando Use-After-Free no `free(core)`).
+   - `s_romData.clear()` e `shrink_to_fit()` executados logo após `VFileMemChunk` para liberar memória RAM.
+3. **Double-Buffering e Simulação:**
+   - Corrigido congelamento de tela no `SimulationGbaEngine.kt` utilizando alternância de 2 bitmaps (`frameBuffers`).
+   - Removido arquivo morto legado `GbaCore.kt` (-355 linhas) e limpas suas referências.
+4. **RetroAchievements (`rcheevos`):**
+   - Corrigida desativação de conquistas após desbloqueio (`nativeDeactivateAchievement(id)`).
+   - Ajustados os testes unitários do `AchievementEvaluatorTest` e `GbaEngineTest`.
 
 ---
 
-## 4. Estado Atual e Próximos Passos
-1. **Commits e Git:**
-   - A pasta `.agents/` contém os arquivos de configuração do agente e pode ser commitada com:
-     ```bash
-     git add .agents PROJECT_CONTEXT.md
-     git commit -m "chore: adicionar regras de build e contexto do projeto"
-     git push origin main
-     ```
-2. **Testes no Dispositivo Android:**
-   - O APK de depuração atual compilado está pronto para instalação e teste de:
-     - Carregamento e troca de ROMs.
-     - Persistência e integridade dos saves `.sav` ao fechar e reabrir.
-     - Responsividade dos inputs touch/físicos.
-3. **Próximas Tarefas Arquiteturais (Backlog):**
-   - Avaliar suporte a áudio via Oboe/AAudio para redução de latência se necessário.
-   - Manter testes contínuos de estabilidade do mGBA.
+## 3. Diretrizes de Build e Ambiente Windows
+- **Arquivo de Regras do Projeto:** [`AGENTS.md`](./AGENTS.md)
+  - Microsoft Defender exclusions: `C:\dev`, `.gradle`, SDK Android e pasta do agente.
+  - Atributos somente-leitura: tratar com `attrib -r -s` se necessário.
+  - Gradle Daemon no Windows Sandbox: rodar compilação de APKs com NDK/CMake (`assembleDebug`) com sandbox bypass para permitir socket loopback local da daemon do Gradle.
 
+---
+
+## 4. Comandos de Validação Rápida
+- **Testes Unitários:** `.\gradlew.bat testDebugUnitTest`
+- **Build do APK Debug:** `.\gradlew.bat assembleDebug`
+- **Caminho do APK:** `app\build\outputs\apk\debug\app-debug.apk`
