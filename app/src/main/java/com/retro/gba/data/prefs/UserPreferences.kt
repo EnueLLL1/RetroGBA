@@ -2,6 +2,7 @@ package com.retro.gba.data.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.retro.gba.data.model.ControlElementState
 import com.retro.gba.security.CryptoManager
 
 /**
@@ -30,13 +31,32 @@ class UserPreferences(
         private const val KEY_FAST_FORWARD = "fast_forward_speed"
         private const val KEY_SAVED_ROMS = "saved_roms_json"
 
+        const val KEY_APP_THEME = "app_theme"
         const val KEY_CONTROLLER_SCALE = "controller_scale"
         const val KEY_CONTROLLER_THEME = "controller_theme"
         const val KEY_SHOW_QUICK_SAVE_LOAD = "show_quick_save_load"
         const val KEY_SHOW_AB_COMBO = "show_ab_combo"
-        const val KEY_PORTRAIT_OFFSETS = "portrait_layout_offsets"
-        const val KEY_LANDSCAPE_OFFSETS = "landscape_layout_offsets"
+        const val KEY_SHOW_TURBO_BUTTON = "show_turbo_button"
+        const val KEY_SHOW_FPS_COUNTER = "show_fps_counter"
+        const val KEY_STRETCH_TO_FILL = "stretch_to_fill"
 
+        const val KEY_PORTRAIT_CONTROLS = "portrait_controls_v4"
+        const val KEY_LANDSCAPE_CONTROLS = "landscape_controls_v4"
+
+        // Temas da interface global do aplicativo
+        const val APP_THEME_GBA_INDIGO = "GBA_INDIGO"
+        const val APP_THEME_GLACIER = "GLACIER"
+        const val APP_THEME_SP_PLATINUM = "SP_PLATINUM"
+        const val APP_THEME_FAMICOM = "FAMICOM"
+        const val APP_THEME_OLED_STEALTH = "OLED_STEALTH"
+
+        // Temas visuais dos controles virtuais
+        const val THEME_FOLLOW_APP = "FOLLOW_APP"
+        const val THEME_GBA_INDIGO = "GBA_INDIGO"
+        const val THEME_GLACIER = "GLACIER"
+        const val THEME_SP_PLATINUM = "SP_PLATINUM"
+        const val THEME_FAMICOM = "FAMICOM"
+        const val THEME_OLED_STEALTH = "OLED_STEALTH"
         const val THEME_CLEAN_MYBOY = "CLEAN_MYBOY"
         const val THEME_RETRO_GBA = "RETRO_GBA"
     }
@@ -120,54 +140,99 @@ class UserPreferences(
         get() = prefs.getString(KEY_SAVED_ROMS, null)
         set(value) = prefs.edit().putString(KEY_SAVED_ROMS, value).apply()
 
+    var appTheme: String
+        get() = prefs.getString(KEY_APP_THEME, APP_THEME_GBA_INDIGO) ?: APP_THEME_GBA_INDIGO
+        set(value) = prefs.edit().putString(KEY_APP_THEME, value).apply()
+
     var controllerScale: Float
         get() = prefs.getFloat(KEY_CONTROLLER_SCALE, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_CONTROLLER_SCALE, value).apply()
 
     var controllerTheme: String
-        get() = prefs.getString(KEY_CONTROLLER_THEME, THEME_CLEAN_MYBOY) ?: THEME_CLEAN_MYBOY
+        get() = prefs.getString(KEY_CONTROLLER_THEME, THEME_FOLLOW_APP) ?: THEME_FOLLOW_APP
         set(value) = prefs.edit().putString(KEY_CONTROLLER_THEME, value).apply()
 
     var showQuickSaveLoad: Boolean
-        get() = prefs.getBoolean(KEY_SHOW_QUICK_SAVE_LOAD, true)
+        get() = prefs.getBoolean(KEY_SHOW_QUICK_SAVE_LOAD, false)
         set(value) = prefs.edit().putBoolean(KEY_SHOW_QUICK_SAVE_LOAD, value).apply()
 
     var showAbCombo: Boolean
-        get() = prefs.getBoolean(KEY_SHOW_AB_COMBO, true)
+        get() = prefs.getBoolean(KEY_SHOW_AB_COMBO, false)
         set(value) = prefs.edit().putBoolean(KEY_SHOW_AB_COMBO, value).apply()
 
-    fun getControlOffsets(isLandscape: Boolean): Map<String, Pair<Float, Float>> {
-        val key = if (isLandscape) KEY_LANDSCAPE_OFFSETS else KEY_PORTRAIT_OFFSETS
+    var showTurboButton: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_TURBO_BUTTON, false)
+        set(value) = prefs.edit().putBoolean(KEY_SHOW_TURBO_BUTTON, value).apply()
+
+    var showFpsCounter: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_FPS_COUNTER, false)
+        set(value) = prefs.edit().putBoolean(KEY_SHOW_FPS_COUNTER, value).apply()
+
+    var stretchToFill: Boolean
+        get() = prefs.getBoolean(KEY_STRETCH_TO_FILL, false)
+        set(value) = prefs.edit().putBoolean(KEY_STRETCH_TO_FILL, value).apply()
+
+    fun getControlStates(isLandscape: Boolean): Map<String, ControlElementState> {
+        val key = if (isLandscape) KEY_LANDSCAPE_CONTROLS else KEY_PORTRAIT_CONTROLS
         val raw = prefs.getString(key, null) ?: return emptyMap()
         if (raw.isBlank()) return emptyMap()
 
-        val result = mutableMapOf<String, Pair<Float, Float>>()
+        val result = mutableMapOf<String, ControlElementState>()
         raw.split(";").forEach { item ->
             val parts = item.split(":")
             if (parts.size == 2) {
                 val id = parts[0]
-                val coords = parts[1].split(",")
-                if (coords.size == 2) {
-                    val dx = coords[0].toFloatOrNull()
-                    val dy = coords[1].toFloatOrNull()
-                    if (dx != null && dy != null) {
-                        result[id] = Pair(dx, dy)
-                    }
+                val values = parts[1].split(",")
+                if (values.size >= 2) {
+                    val dx = values[0].toFloatOrNull()?.coerceIn(-360f, 360f) ?: 0f
+                    val dy = values[1].toFloatOrNull()?.coerceIn(-260f, 260f) ?: 0f
+                    val scale = if (values.size >= 3) {
+                        values[2].toFloatOrNull()?.coerceIn(0.50f, 1.80f) ?: 1.0f
+                    } else 1.0f
+                    result[id] = ControlElementState(dx = dx, dy = dy, scale = scale)
                 }
             }
         }
         return result
     }
 
-    fun setControlOffsets(isLandscape: Boolean, offsets: Map<String, Pair<Float, Float>>) {
-        val key = if (isLandscape) KEY_LANDSCAPE_OFFSETS else KEY_PORTRAIT_OFFSETS
-        val serialized = offsets.entries.joinToString(";") { "${it.key}:${it.value.first},${it.value.second}" }
+    fun setControlStates(isLandscape: Boolean, states: Map<String, ControlElementState>) {
+        val key = if (isLandscape) KEY_LANDSCAPE_CONTROLS else KEY_PORTRAIT_CONTROLS
+        val serialized = states.entries.joinToString(";") { (id, state) ->
+            val cDx = state.dx.coerceIn(-360f, 360f)
+            val cDy = state.dy.coerceIn(-260f, 260f)
+            val cScale = state.scale.coerceIn(0.50f, 1.80f)
+            "$id:$cDx,$cDy,$cScale"
+        }
         prefs.edit().putString(key, serialized).apply()
     }
 
-    fun resetControlOffsets(isLandscape: Boolean) {
-        val key = if (isLandscape) KEY_LANDSCAPE_OFFSETS else KEY_PORTRAIT_OFFSETS
+    fun resetControlStates(isLandscape: Boolean) {
+        val key = if (isLandscape) KEY_LANDSCAPE_CONTROLS else KEY_PORTRAIT_CONTROLS
         prefs.edit().remove(key).apply()
+    }
+
+    fun resetSingleControl(id: String, isLandscape: Boolean) {
+        val current = getControlStates(isLandscape).toMutableMap()
+        current.remove(id)
+        setControlStates(isLandscape, current)
+    }
+
+    fun getControlOffsets(isLandscape: Boolean): Map<String, Pair<Float, Float>> {
+        return getControlStates(isLandscape).mapValues { Pair(it.value.dx, it.value.dy) }
+    }
+
+    fun setControlOffsets(isLandscape: Boolean, offsets: Map<String, Pair<Float, Float>>) {
+        val current = getControlStates(isLandscape).toMutableMap()
+        offsets.forEach { (id, pair) ->
+            val existingScale = current[id]?.scale ?: 1.0f
+            current[id] = ControlElementState(dx = pair.first, dy = pair.second, scale = existingScale)
+        }
+        setControlStates(isLandscape, current)
+    }
+
+    fun resetControlOffsets(isLandscape: Boolean) {
+        resetControlStates(isLandscape)
     }
 
     fun isLoggedIn(): Boolean = !username.isNullOrBlank() && !token.isNullOrBlank()

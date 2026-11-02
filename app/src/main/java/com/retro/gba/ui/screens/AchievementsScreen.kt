@@ -54,13 +54,13 @@ fun AchievementsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(GbaBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
         // Cabeçalho do Jogo
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = GbaCard),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -85,7 +85,7 @@ fun AchievementsScreen(
                     Text(
                         text = "$currentPoints / $totalPoints Pontos",
                         fontSize = 13.sp,
-                        color = TrophyGold,
+                        color = MaterialTheme.colorScheme.tertiary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -98,8 +98,8 @@ fun AchievementsScreen(
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = TrophyGold,
-                    trackColor = Color(0xFF1B1828)
+                    color = MaterialTheme.colorScheme.tertiary,
+                    trackColor = MaterialTheme.colorScheme.surface
                 )
             }
         }
@@ -173,7 +173,7 @@ fun AchievementItemCard(achievement: Achievement) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (achievement.isUnlocked) Color(0xFF26203D) else Color(0xFF1B1926)
+            containerColor = if (achievement.isUnlocked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -190,7 +190,7 @@ fun AchievementItemCard(achievement: Achievement) {
                     .background(Color.Black)
                     .border(
                         1.dp,
-                        if (achievement.isUnlocked) TrophyGold else Color.DarkGray,
+                        if (achievement.isUnlocked) MaterialTheme.colorScheme.tertiary else Color.DarkGray,
                         RoundedCornerShape(8.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -225,7 +225,7 @@ fun AchievementItemCard(achievement: Achievement) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${achievement.points} pts",
-                    color = TrophyGold,
+                    color = MaterialTheme.colorScheme.tertiary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )

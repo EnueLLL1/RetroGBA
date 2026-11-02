@@ -1,6 +1,7 @@
 package com.retro.gba.data.prefs
 
 import android.content.SharedPreferences
+import com.retro.gba.data.model.ControlElementState
 import com.retro.gba.security.CryptoManager
 import org.junit.Assert.*
 import org.junit.Before
@@ -100,83 +101,120 @@ class UserPreferencesControlsTest {
     }
 
     @Test
-    fun controllerScale_defaultsTo1f_andUpdatesProperly() {
-        assertEquals(1.0f, preferences.controllerScale, 0.01f)
+    fun controllerTheme_defaultsToFollowApp_andUpdatesProperly() {
+        assertEquals(UserPreferences.THEME_FOLLOW_APP, preferences.controllerTheme)
 
-        preferences.controllerScale = 1.25f
-        assertEquals(1.25f, preferences.controllerScale, 0.01f)
+        preferences.controllerTheme = UserPreferences.THEME_GBA_INDIGO
+        assertEquals(UserPreferences.THEME_GBA_INDIGO, preferences.controllerTheme)
 
-        preferences.controllerScale = 0.85f
-        assertEquals(0.85f, preferences.controllerScale, 0.01f)
-    }
-
-    @Test
-    fun controllerTheme_defaultsToCleanMyBoy_andUpdatesProperly() {
-        assertEquals(UserPreferences.THEME_CLEAN_MYBOY, preferences.controllerTheme)
-
-        preferences.controllerTheme = UserPreferences.THEME_RETRO_GBA
-        assertEquals(UserPreferences.THEME_RETRO_GBA, preferences.controllerTheme)
+        preferences.controllerTheme = UserPreferences.THEME_GLACIER
+        assertEquals(UserPreferences.THEME_GLACIER, preferences.controllerTheme)
 
         preferences.controllerTheme = UserPreferences.THEME_CLEAN_MYBOY
         assertEquals(UserPreferences.THEME_CLEAN_MYBOY, preferences.controllerTheme)
     }
 
     @Test
-    fun quickSaveLoadAndAbCombo_defaultToTrue_andToggleProperly() {
-        assertTrue(preferences.showQuickSaveLoad)
-        assertTrue(preferences.showAbCombo)
+    fun appTheme_defaultsToGbaIndigo_andUpdatesProperly() {
+        assertEquals(UserPreferences.APP_THEME_GBA_INDIGO, preferences.appTheme)
 
-        preferences.showQuickSaveLoad = false
-        preferences.showAbCombo = false
-        assertFalse(preferences.showQuickSaveLoad)
-        assertFalse(preferences.showAbCombo)
+        preferences.appTheme = UserPreferences.APP_THEME_GLACIER
+        assertEquals(UserPreferences.APP_THEME_GLACIER, preferences.appTheme)
 
-        preferences.showQuickSaveLoad = true
-        preferences.showAbCombo = true
-        assertTrue(preferences.showQuickSaveLoad)
-        assertTrue(preferences.showAbCombo)
+        preferences.appTheme = UserPreferences.APP_THEME_OLED_STEALTH
+        assertEquals(UserPreferences.APP_THEME_OLED_STEALTH, preferences.appTheme)
     }
 
     @Test
-    fun controlOffsets_persistIndependentlyForPortraitAndLandscape_andResetProperly() {
-        // Inicialmente vazios
-        assertTrue(preferences.getControlOffsets(isLandscape = false).isEmpty())
-        assertTrue(preferences.getControlOffsets(isLandscape = true).isEmpty())
+    fun optionalControls_defaultToFalse_andToggleProperly() {
+        // Por padrão o layout deve ser limpo e fiel à referência do My Boy!
+        assertFalse(preferences.showQuickSaveLoad)
+        assertFalse(preferences.showAbCombo)
+        assertFalse(preferences.showTurboButton)
+        assertFalse(preferences.showFpsCounter)
+        assertFalse(preferences.stretchToFill)
 
-        val portraitOffsets = mapOf(
-            "dpad" to Pair(12.5f, -8.0f),
-            "ab_cluster" to Pair(-15.0f, 20.0f)
+        preferences.showQuickSaveLoad = true
+        preferences.showAbCombo = true
+        preferences.showTurboButton = true
+        preferences.showFpsCounter = true
+        preferences.stretchToFill = true
+
+        assertTrue(preferences.showQuickSaveLoad)
+        assertTrue(preferences.showAbCombo)
+        assertTrue(preferences.showTurboButton)
+        assertTrue(preferences.showFpsCounter)
+        assertTrue(preferences.stretchToFill)
+    }
+
+    @Test
+    fun controlStates_persistsCoordinatesAndScaleSeparatelyForPortraitAndLandscape() {
+        // Inicialmente vazios (usam defaults calculados na UI)
+        assertTrue(preferences.getControlStates(isLandscape = false).isEmpty())
+        assertTrue(preferences.getControlStates(isLandscape = true).isEmpty())
+
+        // Configuração para Retrato (Em Pé)
+        val portraitMap = mapOf(
+            "b_button" to ControlElementState(dx = 10f, dy = -5f, scale = 1.10f),
+            "a_button" to ControlElementState(dx = 20f, dy = 0f, scale = 1.25f),
+            "dpad" to ControlElementState(dx = 0f, dy = 0f, scale = 0.90f)
         )
-        val landscapeOffsets = mapOf(
-            "dpad" to Pair(25.0f, 0.0f),
-            "ab_cluster" to Pair(-30.0f, -10.0f)
+
+        // Configuração para Paisagem (Deitado)
+        val landscapeMap = mapOf(
+            "b_button" to ControlElementState(dx = -40f, dy = -10f, scale = 1.40f),
+            "a_button" to ControlElementState(dx = -15f, dy = -10f, scale = 0.85f),
+            "dpad" to ControlElementState(dx = 15f, dy = 10f, scale = 1.15f)
         )
 
-        preferences.setControlOffsets(isLandscape = false, portraitOffsets)
-        preferences.setControlOffsets(isLandscape = true, landscapeOffsets)
+        preferences.setControlStates(isLandscape = false, portraitMap)
+        preferences.setControlStates(isLandscape = true, landscapeMap)
 
-        val loadedPortrait = preferences.getControlOffsets(isLandscape = false)
-        val loadedLandscape = preferences.getControlOffsets(isLandscape = true)
+        val loadedPortrait = preferences.getControlStates(isLandscape = false)
+        val loadedLandscape = preferences.getControlStates(isLandscape = true)
 
-        assertEquals(2, loadedPortrait.size)
-        assertEquals(12.5f, loadedPortrait["dpad"]!!.first, 0.01f)
-        assertEquals(-8.0f, loadedPortrait["dpad"]!!.second, 0.01f)
-        assertEquals(-15.0f, loadedPortrait["ab_cluster"]!!.first, 0.01f)
-        assertEquals(20.0f, loadedPortrait["ab_cluster"]!!.second, 0.01f)
+        // Verifica que o modo Em Pé possui os seus próprios tamanhos e posições
+        assertEquals(3, loadedPortrait.size)
+        assertEquals(10f, loadedPortrait["b_button"]!!.dx, 0.01f)
+        assertEquals(-5f, loadedPortrait["b_button"]!!.dy, 0.01f)
+        assertEquals(1.10f, loadedPortrait["b_button"]!!.scale, 0.01f)
+        assertEquals(1.25f, loadedPortrait["a_button"]!!.scale, 0.01f)
 
-        assertEquals(2, loadedLandscape.size)
-        assertEquals(25.0f, loadedLandscape["dpad"]!!.first, 0.01f)
-        assertEquals(0.0f, loadedLandscape["dpad"]!!.second, 0.01f)
-        assertEquals(-30.0f, loadedLandscape["ab_cluster"]!!.first, 0.01f)
-        assertEquals(-10.0f, loadedLandscape["ab_cluster"]!!.second, 0.01f)
+        // Verifica que o modo Deitado tem valores totalmente independentes
+        assertEquals(3, loadedLandscape.size)
+        assertEquals(-40f, loadedLandscape["b_button"]!!.dx, 0.01f)
+        assertEquals(1.40f, loadedLandscape["b_button"]!!.scale, 0.01f)
+        assertEquals(0.85f, loadedLandscape["a_button"]!!.scale, 0.01f)
 
-        // Reset apenas do Portrait não deve afetar o Landscape
-        preferences.resetControlOffsets(isLandscape = false)
-        assertTrue(preferences.getControlOffsets(isLandscape = false).isEmpty())
-        assertEquals(2, preferences.getControlOffsets(isLandscape = true).size)
+        // Reset individual: resetar apenas o b_button no modo Paisagem não altera Retrato nem outros botões
+        preferences.resetSingleControl("b_button", isLandscape = true)
+        val afterSingleResetLandscape = preferences.getControlStates(isLandscape = true)
+        assertFalse(afterSingleResetLandscape.containsKey("b_button"))
+        assertTrue(afterSingleResetLandscape.containsKey("a_button"))
+        assertTrue(preferences.getControlStates(isLandscape = false).containsKey("b_button"))
 
-        // Reset do Landscape
-        preferences.resetControlOffsets(isLandscape = true)
-        assertTrue(preferences.getControlOffsets(isLandscape = true).isEmpty())
+        // Reset completo da orientação
+        preferences.resetControlStates(isLandscape = true)
+        assertTrue(preferences.getControlStates(isLandscape = true).isEmpty())
+        assertEquals(3, preferences.getControlStates(isLandscape = false).size)
+    }
+
+    @Test
+    fun controlStates_clampsCoordinatesAndScalesProperly() {
+        val outOfBounds = mapOf(
+            "dpad" to ControlElementState(dx = -500f, dy = 600f, scale = 3.5f),
+            "a_button" to ControlElementState(dx = 400f, dy = -400f, scale = 0.1f)
+        )
+        preferences.setControlStates(isLandscape = false, outOfBounds)
+        val loaded = preferences.getControlStates(isLandscape = false)
+
+        // Limites: dx em -360..360, dy em -260..260, scale em 0.50..1.80
+        assertEquals(-360f, loaded["dpad"]!!.dx, 0.01f)
+        assertEquals(260f, loaded["dpad"]!!.dy, 0.01f)
+        assertEquals(1.80f, loaded["dpad"]!!.scale, 0.01f)
+
+        assertEquals(360f, loaded["a_button"]!!.dx, 0.01f)
+        assertEquals(-260f, loaded["a_button"]!!.dy, 0.01f)
+        assertEquals(0.50f, loaded["a_button"]!!.scale, 0.01f)
     }
 }

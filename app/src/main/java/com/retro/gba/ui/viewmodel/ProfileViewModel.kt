@@ -45,10 +45,18 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     private val _fastForwardSpeed = MutableStateFlow(userPrefs.fastForwardSpeed)
     val fastForwardSpeed: StateFlow<Float> = _fastForwardSpeed.asStateFlow()
 
+    private val _appTheme = MutableStateFlow(userPrefs.appTheme)
+    val appTheme: StateFlow<String> = _appTheme.asStateFlow()
+
     init {
         if (_isLoggedIn.value) {
             fetchProfile()
         }
+    }
+
+    fun setAppTheme(theme: String) {
+        userPrefs.appTheme = theme
+        _appTheme.value = theme
     }
 
     fun login(user: String, passOrToken: String) {

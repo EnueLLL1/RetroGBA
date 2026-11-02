@@ -63,3 +63,10 @@ data class RomItem(
     val badgeIconUrl: String? = null
 )
 
+data class ControlElementState(
+    val dx: Float = 0f,
+    val dy: Float = 0f,
+    val scale: Float = 1.0f
+)
+
+

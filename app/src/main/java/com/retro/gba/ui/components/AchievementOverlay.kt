@@ -21,14 +21,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.retro.gba.data.model.Achievement
-import com.retro.gba.ui.theme.GbaSecondary
-import com.retro.gba.ui.theme.TrophyGold
+import com.retro.gba.ui.theme.LocalAppThemeColors
 
 @Composable
 fun AchievementOverlay(
     achievement: Achievement?,
     modifier: Modifier = Modifier
 ) {
+    val themeColors = LocalAppThemeColors.current
+
     AnimatedVisibility(
         visible = achievement != null,
         enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -48,10 +49,10 @@ fun AchievementOverlay(
                         .clip(RoundedCornerShape(16.dp))
                         .background(
                             Brush.horizontalGradient(
-                                colors = listOf(Color(0xFF1E1A34), Color(0xFF2C2454))
+                                colors = listOf(themeColors.surface, themeColors.card)
                             )
                         )
-                        .border(1.5.dp, TrophyGold, RoundedCornerShape(16.dp))
+                        .border(1.5.dp, themeColors.trophyGold, RoundedCornerShape(16.dp))
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -61,7 +62,7 @@ fun AchievementOverlay(
                             .size(54.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Black.copy(alpha = 0.5f))
-                            .border(1.dp, GbaSecondary, RoundedCornerShape(8.dp)),
+                            .border(1.dp, themeColors.primary, RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
@@ -79,13 +80,13 @@ fun AchievementOverlay(
                             Icon(
                                 imageVector = Icons.Default.EmojiEvents,
                                 contentDescription = "Trophy",
-                                tint = TrophyGold,
+                                tint = themeColors.trophyGold,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "CONQUISTA DESBLOQUEADA!",
-                                color = TrophyGold,
+                                color = themeColors.trophyGold,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
@@ -112,12 +113,12 @@ fun AchievementOverlay(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(TrophyGold.copy(alpha = 0.2f))
+                            .background(themeColors.trophyGold.copy(alpha = 0.2f))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "+${achievement.points}",
-                            color = TrophyGold,
+                            color = themeColors.trophyGold,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )

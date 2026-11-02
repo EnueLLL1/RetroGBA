@@ -1,8 +1,7 @@
 <resources>
-    <color name="gba_purple">#4A3B7C</color>
-    <color name="gba_indigo">#2E2356</color>
-    <color name="gba_accent">#00E5FF</color>
-    <color name="gba_dark">#12111A</color>
-    <color name="trophy_gold">#FFD700</color>
+    <color name="gba_purple">#6C5CE7</color>
+    <color name="gba_indigo">#0E0C16</color>
+    <color name="gba_accent">#A29BFE</color>
+    <color name="gba_dark">#0E0C16</color>
+    <color name="trophy_gold">#F59E0B</color>
 </resources>
-

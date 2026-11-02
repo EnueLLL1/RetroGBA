@@ -25,7 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.retro.gba.data.model.RomItem
-import com.retro.gba.ui.theme.GbaBackground
+import com.retro.gba.ui.theme.LocalAppThemeColors
 import com.retro.gba.ui.theme.GbaCard
 import com.retro.gba.ui.theme.GbaSecondary
 import com.retro.gba.ui.theme.TrophyGold
@@ -66,14 +66,14 @@ fun LibraryScreen(
     }
 
     Scaffold(
-        containerColor = GbaBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
                     filePicker.launch(arrayOf("*/*"))
                 },
-                containerColor = GbaSecondary,
-                contentColor = Color.Black
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.White
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Carregar ROM")
                 Spacer(Modifier.width(8.dp))
@@ -110,10 +110,10 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GbaSecondary,
-                        unfocusedBorderColor = Color(0xFF2C2449),
-                        focusedContainerColor = GbaCard,
-                        unfocusedContainerColor = GbaCard,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White
                     )
@@ -169,7 +169,7 @@ fun LibraryScreen(
                                     emulatorViewModel.loadRomFromUri(Uri.parse(rom.uri), rom.fileName)
                                     onGameSelected()
                                 },
-                            colors = CardDefaults.cardColors(containerColor = GbaCard),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Row(
@@ -197,7 +197,7 @@ fun LibraryScreen(
                                         Icon(
                                             imageVector = Icons.Default.PlayArrow,
                                             contentDescription = null,
-                                            tint = GbaSecondary,
+                                            tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(28.dp)
                                         )
                                     }
@@ -225,13 +225,13 @@ fun LibraryScreen(
                                     Icon(
                                         imageVector = Icons.Default.EmojiEvents,
                                         contentDescription = null,
-                                        tint = TrophyGold,
+                                        tint = MaterialTheme.colorScheme.tertiary,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
                                         text = "${rom.unlockedAchievements}/${rom.totalAchievements}",
-                                        color = TrophyGold,
+                                        color = MaterialTheme.colorScheme.tertiary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )

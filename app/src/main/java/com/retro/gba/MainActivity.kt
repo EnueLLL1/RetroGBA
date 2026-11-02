@@ -15,6 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.retro.gba.ui.screens.AchievementsScreen
@@ -31,7 +35,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Library : Screen("library", "Biblioteca", Icons.Default.Folder)
     object Emulator : Screen("emulator", "Emulador", Icons.Default.SportsEsports)
     object Achievements : Screen("achievements", "Conquistas", Icons.Default.EmojiEvents)
-    object Profile : Screen("profile", "Perfil RA", Icons.Default.Person)
+    object Profile : Screen("profile", "Ajustes", Icons.Default.Settings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -44,10 +48,24 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            RetroGBATheme {
+            val currentAppTheme by profileViewModel.appTheme.collectAsState()
+            RetroGBATheme(appTheme = currentAppTheme) {
                 val navController = rememberNavController()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
+                val isEmulatorRoute = currentRoute == Screen.Emulator.route
+
+                val view = LocalView.current
+                LaunchedEffect(isEmulatorRoute) {
+                    val controller = WindowCompat.getInsetsController(window, view)
+                    controller.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    if (isEmulatorRoute) {
+                        controller.hide(WindowInsetsCompat.Type.systemBars())
+                    } else {
+                        controller.show(WindowInsetsCompat.Type.systemBars())
+                    }
+                }
 
                 val configuration = LocalConfiguration.current
                 val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp >= 600
@@ -61,14 +79,27 @@ class MainActivity : ComponentActivity() {
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = GbaBackground
+                    color = MaterialTheme.colorScheme.background
                 ) {
-                    if (isLandscape) {
+                    if (isEmulatorRoute) {
+                        // Modo Tela Cheia Imersiva na Emulação (sem NavigationBar/NavigationRail)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .windowInsetsPadding(WindowInsets.displayCutout)
+                        ) {
+                            MainNavHost(
+                                navController = navController,
+                                emulatorViewModel = emulatorViewModel,
+                                profileViewModel = profileViewModel
+                            )
+                        }
+                    } else if (isLandscape) {
                         // Layout Adaptativo em Modo Paisagem / Telas Grandes (NavigationRail na Lateral)
                         Row(modifier = Modifier.fillMaxSize()) {
                             NavigationRail(
-                                containerColor = Color(0xFF161424),
-                                contentColor = Color.White
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.onSurface
                             ) {
                                 Spacer(Modifier.weight(1f))
                                 screens.forEach { screen ->
@@ -77,11 +108,11 @@ class MainActivity : ComponentActivity() {
                                         label = { Text(screen.title) },
                                         selected = currentRoute == screen.route,
                                         colors = NavigationRailItemDefaults.colors(
-                                            selectedIconColor = Color.Black,
-                                            selectedTextColor = GbaSecondary,
-                                            indicatorColor = GbaSecondary,
-                                            unselectedIconColor = Color.Gray,
-                                            unselectedTextColor = Color.Gray
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                                         ),
                                         onClick = {
                                             navController.navigate(screen.route) {
@@ -113,10 +144,10 @@ class MainActivity : ComponentActivity() {
                     } else {
                         // Layout Retrato Padrão (NavigationBar na Parte Inferior)
                         Scaffold(
-                            containerColor = GbaBackground,
+                            containerColor = MaterialTheme.colorScheme.background,
                             bottomBar = {
                                 NavigationBar(
-                                    containerColor = Color(0xFF161424)
+                                    containerColor = MaterialTheme.colorScheme.surface
                                 ) {
                                     screens.forEach { screen ->
                                         NavigationBarItem(
@@ -124,11 +155,11 @@ class MainActivity : ComponentActivity() {
                                             label = { Text(screen.title) },
                                             selected = currentRoute == screen.route,
                                             colors = NavigationBarItemDefaults.colors(
-                                                selectedIconColor = Color.Black,
-                                                selectedTextColor = GbaSecondary,
-                                                indicatorColor = GbaSecondary,
-                                                unselectedIconColor = Color.Gray,
-                                                unselectedTextColor = Color.Gray
+                                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                                             ),
                                             onClick = {
                                                 navController.navigate(screen.route) {
@@ -190,6 +221,15 @@ private fun MainNavHost(
                 onNavigateToAchievements = {
                     navController.navigate(Screen.Achievements.route) {
                         launchSingleTop = true
+                    }
+                },
+                onNavigateToLibrary = {
+                    navController.navigate(Screen.Library.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
                     }
                 }
             )

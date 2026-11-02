@@ -1,5 +1,6 @@
 package com.retro.gba.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -25,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.retro.gba.data.model.UserProfile
+import com.retro.gba.ui.theme.AvailableAppThemes
+import com.retro.gba.ui.theme.LocalAppThemeColors
 import com.retro.gba.ui.theme.GbaBackground
 import com.retro.gba.ui.theme.GbaCard
 import com.retro.gba.ui.theme.GbaSecondary
@@ -47,6 +50,7 @@ fun ProfileScreen(
     val hapticFeedback by viewModel.hapticFeedback.collectAsState()
     val controllerOpacity by viewModel.controllerOpacity.collectAsState()
     val fastForwardSpeed by viewModel.fastForwardSpeed.collectAsState()
+    val appTheme by viewModel.appTheme.collectAsState()
 
     ProfileScreenContent(
         isLoggedIn = isLoggedIn,
@@ -58,6 +62,8 @@ fun ProfileScreen(
         hapticFeedback = hapticFeedback,
         controllerOpacity = controllerOpacity,
         fastForwardSpeed = fastForwardSpeed,
+        appTheme = appTheme,
+        onAppThemeChange = { viewModel.setAppTheme(it) },
         onHardcoreChange = { viewModel.setHardcore(it) },
         onControllerOpacityChange = { viewModel.setControllerOpacity(it) },
         onHapticFeedbackChange = { viewModel.setHapticFeedback(it) },
@@ -79,6 +85,8 @@ fun ProfileScreenContent(
     hapticFeedback: Boolean,
     controllerOpacity: Float,
     fastForwardSpeed: Float,
+    appTheme: String = com.retro.gba.data.prefs.UserPreferences.APP_THEME_GBA_INDIGO,
+    onAppThemeChange: (String) -> Unit = {},
     onHardcoreChange: (Boolean) -> Unit,
     onControllerOpacityChange: (Float) -> Unit,
     onHapticFeedbackChange: (Boolean) -> Unit,
@@ -94,7 +102,7 @@ fun ProfileScreenContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(GbaBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -225,6 +233,105 @@ fun ProfileScreenContent(
                             checked = isHardcore,
                             onCheckedChange = onHardcoreChange
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Aparência & Tema Global do Aplicativo
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Palette,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Aparência & Tema Global",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 16.sp
+                        )
+                    }
+                    Text(
+                        text = "Escolha uma paleta curada para a interface e controles virtuais.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AvailableAppThemes.forEach { themePalette ->
+                            val isSelected = appTheme == themePalette.id
+                            Surface(
+                                onClick = { onAppThemeChange(themePalette.id) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) themePalette.primary.copy(alpha = 0.18f) else Color.Transparent,
+                                border = BorderStroke(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) themePalette.primary else Color.White.copy(alpha = 0.15f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clip(CircleShape)
+                                                    .background(themePalette.background)
+                                                    .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clip(CircleShape)
+                                                    .background(themePalette.primary)
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clip(CircleShape)
+                                                    .background(themePalette.secondary)
+                                            )
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(
+                                            text = themePalette.displayName,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 13.sp,
+                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+
+                                    if (isSelected) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = "Selecionado",
+                                            tint = themePalette.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.retro.gba.data.api.RetroAchievementsApi
 import com.retro.gba.data.model.Achievement
+import com.retro.gba.data.model.ControlElementState
 import com.retro.gba.data.model.GameInfo
 import com.retro.gba.data.model.RomItem
 import com.retro.gba.data.prefs.UserPreferences
@@ -92,14 +93,31 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     private val _showAbCombo = MutableStateFlow(userPrefs.showAbCombo)
     val showAbCombo: StateFlow<Boolean> = _showAbCombo.asStateFlow()
 
+    private val _showTurboButton = MutableStateFlow(userPrefs.showTurboButton)
+    val showTurboButton: StateFlow<Boolean> = _showTurboButton.asStateFlow()
+
+    private val _showFpsCounter = MutableStateFlow(userPrefs.showFpsCounter)
+    val showFpsCounter: StateFlow<Boolean> = _showFpsCounter.asStateFlow()
+
+    private val _stretchToFill = MutableStateFlow(userPrefs.stretchToFill)
+    val stretchToFill: StateFlow<Boolean> = _stretchToFill.asStateFlow()
+
     private val _isLayoutEditMode = MutableStateFlow(false)
     val isLayoutEditMode: StateFlow<Boolean> = _isLayoutEditMode.asStateFlow()
 
-    private val _portraitOffsets = MutableStateFlow(userPrefs.getControlOffsets(isLandscape = false))
-    val portraitOffsets: StateFlow<Map<String, Pair<Float, Float>>> = _portraitOffsets.asStateFlow()
+    private val _portraitControls = MutableStateFlow(userPrefs.getControlStates(isLandscape = false))
+    val portraitControls: StateFlow<Map<String, ControlElementState>> = _portraitControls.asStateFlow()
 
-    private val _landscapeOffsets = MutableStateFlow(userPrefs.getControlOffsets(isLandscape = true))
-    val landscapeOffsets: StateFlow<Map<String, Pair<Float, Float>>> = _landscapeOffsets.asStateFlow()
+    private val _landscapeControls = MutableStateFlow(userPrefs.getControlStates(isLandscape = true))
+    val landscapeControls: StateFlow<Map<String, ControlElementState>> = _landscapeControls.asStateFlow()
+
+    val portraitOffsets: StateFlow<Map<String, Pair<Float, Float>>> get() = MutableStateFlow(
+        _portraitControls.value.mapValues { Pair(it.value.dx, it.value.dy) }
+    ).asStateFlow()
+
+    val landscapeOffsets: StateFlow<Map<String, Pair<Float, Float>>> get() = MutableStateFlow(
+        _landscapeControls.value.mapValues { Pair(it.value.dx, it.value.dy) }
+    ).asStateFlow()
 
     val engine: com.retro.gba.emulator.IGbaEngine = if (com.retro.gba.emulator.NativeGbaEngine.isNativeAvailable()) {
         com.retro.gba.emulator.NativeGbaEngine(
@@ -155,6 +173,17 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         gbaCore.frameskip = recommended
     }
 
+    fun setMenuPaused(paused: Boolean) {
+        gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
+        if (!gbaCore.isRunning) return
+        if (paused && !gbaCore.isPaused) {
+            gbaCore.pause()
+        } else if (!paused && gbaCore.isPaused && !_isLayoutEditMode.value) {
+            gbaCore.resume()
+            updateFrameskip()
+        }
+    }
+
     fun onAppPause() {
         gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
         if (gbaCore.isRunning && !gbaCore.isPaused) {
@@ -168,7 +197,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onAppResume() {
-        if (gbaCore.isRunning && gbaCore.isPaused) {
+        if (gbaCore.isRunning && gbaCore.isPaused && !_isLayoutEditMode.value) {
             gbaCore.resume()
             updateFrameskip()
             _currentGame.value?.let { game ->
@@ -214,7 +243,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
                         _achievements.value = updatedList
                         gameAchievements = updatedList
-                        _statusMessage.value = "Conectado ao RetroAchievements: ${info.title} (${list.size} conquistas)"
+                        _statusMessage.value = "RA: ${info.title} (${list.size} troféus)"
 
                         // Salva o ícone/capa do jogo e dados de conquistas atualizados no RomItem
                         val updatedRomItem = romItem.copy(
@@ -229,7 +258,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                         _statusMessage.value = "Conquistas indisponíveis: ${it.localizedMessage}"
                     }
                 }.onFailure {
-                    _statusMessage.value = "Jogo não catalogado no RetroAchievements para esta ROM."
+                    _statusMessage.value = "Jogo não catalogado no RetroAchievements."
                 }
 
                 // 2. Buscar Save RAM persistida em disco (.sav)
@@ -314,7 +343,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setControllerScale(scale: Float) {
-        val clamped = scale.coerceIn(0.75f, 1.45f)
+        val clamped = scale.coerceIn(0.75f, 1.35f)
         _controllerScale.value = clamped
         userPrefs.controllerScale = clamped
     }
@@ -334,35 +363,89 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         userPrefs.showAbCombo = enabled
     }
 
+    fun setShowTurboButton(enabled: Boolean) {
+        _showTurboButton.value = enabled
+        userPrefs.showTurboButton = enabled
+    }
+
+    fun setShowFpsCounter(enabled: Boolean) {
+        _showFpsCounter.value = enabled
+        userPrefs.showFpsCounter = enabled
+    }
+
+    fun setStretchToFill(enabled: Boolean) {
+        _stretchToFill.value = enabled
+        userPrefs.stretchToFill = enabled
+    }
+
     fun setLayoutEditMode(enabled: Boolean) {
         gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
         _isLayoutEditMode.value = enabled
+        if (enabled && gbaCore.isRunning && !gbaCore.isPaused) {
+            gbaCore.pause()
+        } else if (!enabled && gbaCore.isRunning && gbaCore.isPaused) {
+            gbaCore.resume()
+            updateFrameskip()
+        }
     }
 
     fun updateControlOffset(id: String, isLandscape: Boolean, dxDp: Float, dyDp: Float) {
-        val clampedDx = dxDp.coerceIn(-280f, 280f)
-        val clampedDy = dyDp.coerceIn(-280f, 280f)
+        val clampedDx = dxDp.coerceIn(-360f, 360f)
+        val clampedDy = dyDp.coerceIn(-260f, 260f)
         if (isLandscape) {
-            val updated = _landscapeOffsets.value.toMutableMap()
-            updated[id] = Pair(clampedDx, clampedDy)
-            _landscapeOffsets.value = updated
-            userPrefs.setControlOffsets(isLandscape = true, updated)
+            val updated = _landscapeControls.value.toMutableMap()
+            val existing = updated[id] ?: ControlElementState()
+            updated[id] = existing.copy(dx = clampedDx, dy = clampedDy)
+            _landscapeControls.value = updated
+            userPrefs.setControlStates(isLandscape = true, updated)
         } else {
-            val updated = _portraitOffsets.value.toMutableMap()
-            updated[id] = Pair(clampedDx, clampedDy)
-            _portraitOffsets.value = updated
-            userPrefs.setControlOffsets(isLandscape = false, updated)
+            val updated = _portraitControls.value.toMutableMap()
+            val existing = updated[id] ?: ControlElementState()
+            updated[id] = existing.copy(dx = clampedDx, dy = clampedDy)
+            _portraitControls.value = updated
+            userPrefs.setControlStates(isLandscape = false, updated)
         }
     }
 
-    fun resetLayoutOffsets(isLandscape: Boolean) {
-        userPrefs.resetControlOffsets(isLandscape)
+    fun updateControlScale(id: String, isLandscape: Boolean, scale: Float) {
+        val clampedScale = scale.coerceIn(0.50f, 1.80f)
         if (isLandscape) {
-            _landscapeOffsets.value = emptyMap()
+            val updated = _landscapeControls.value.toMutableMap()
+            val existing = updated[id] ?: ControlElementState()
+            updated[id] = existing.copy(scale = clampedScale)
+            _landscapeControls.value = updated
+            userPrefs.setControlStates(isLandscape = true, updated)
         } else {
-            _portraitOffsets.value = emptyMap()
+            val updated = _portraitControls.value.toMutableMap()
+            val existing = updated[id] ?: ControlElementState()
+            updated[id] = existing.copy(scale = clampedScale)
+            _portraitControls.value = updated
+            userPrefs.setControlStates(isLandscape = false, updated)
         }
-        _statusMessage.value = "Layout dos controles restaurado para o padrão"
+    }
+
+    fun resetSingleControl(id: String, isLandscape: Boolean) {
+        userPrefs.resetSingleControl(id, isLandscape)
+        if (isLandscape) {
+            val updated = _landscapeControls.value.toMutableMap()
+            updated.remove(id)
+            _landscapeControls.value = updated
+        } else {
+            val updated = _portraitControls.value.toMutableMap()
+            updated.remove(id)
+            _portraitControls.value = updated
+        }
+        _statusMessage.value = "Item restaurado para o padrão"
+    }
+
+    fun resetLayoutOffsets(isLandscape: Boolean) {
+        userPrefs.resetControlStates(isLandscape)
+        if (isLandscape) {
+            _landscapeControls.value = emptyMap()
+        } else {
+            _portraitControls.value = emptyMap()
+        }
+        _statusMessage.value = "Layout restaurado para o padrão"
     }
 
     fun quickSave() {
@@ -393,7 +476,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
             withContext(NonCancellable) {
                 val saved = saveRepository.saveBatteryRam(hash, saveRam)
                 if (saved) {
-                    _statusMessage.value = "Progresso do cartucho salvo com sucesso!"
+                    _statusMessage.value = "Bateria (.SAV) gravada com sucesso!"
                 }
             }
         }
@@ -430,9 +513,9 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 val ok = saveRepository.saveState(hash, slot, stateBytes)
                 if (ok) {
                     refreshSaveSlots()
-                    _statusMessage.value = "Estado salvo no Slot $slot (${stateBytes.size} bytes)!"
+                    _statusMessage.value = "Salvo no Slot $slot"
                 } else {
-                    _statusMessage.value = "Falha ao gravar arquivo de Save State no disco"
+                    _statusMessage.value = "Falha ao gravar Save State"
                 }
             }
         } else {
@@ -454,11 +537,11 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val bytes = saveRepository.loadState(hash, slot)
             if (bytes == null || bytes.isEmpty()) {
-                _statusMessage.value = "Nenhum estado salvo encontrado no Slot $slot"
+                _statusMessage.value = "Slot $slot vazio"
                 return@launch
             }
             val success = engine.loadState(bytes)
-            _statusMessage.value = if (success) "Estado restaurado com sucesso do Slot $slot!" else "Falha ao restaurar Save State"
+            _statusMessage.value = if (success) "Slot $slot carregado!" else "Falha ao restaurar Save State"
         }
     }
 
@@ -481,7 +564,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         type: com.retro.gba.data.model.CheatType = com.retro.gba.data.model.CheatType.AUTODETECT
     ) {
         if (userPrefs.isHardcoreMode) {
-            _statusMessage.value = "Cheats desativados no Modo Hardcore do RetroAchievements!"
+            _statusMessage.value = "Cheats desativados no Modo Hardcore!"
             return
         }
         if (code.isBlank()) {
@@ -506,13 +589,13 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             cheatRepository.saveCheats(hash, updated)
             applyCheatsToEngine(updated)
-            _statusMessage.value = "Cheat '${newCheat.description}' ativado com sucesso!"
+            _statusMessage.value = "Cheat '${newCheat.description}' ativado!"
         }
     }
 
     fun toggleCheat(cheatId: String) {
         if (userPrefs.isHardcoreMode) {
-            _statusMessage.value = "Cheats desativados no Modo Hardcore do RetroAchievements!"
+            _statusMessage.value = "Cheats desativados no Modo Hardcore!"
             return
         }
         val hash = currentRomHash ?: return

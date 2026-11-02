@@ -4,14 +4,15 @@ import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
@@ -22,7 +23,6 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -39,12 +39,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.retro.gba.data.model.ControlElementState
 import com.retro.gba.data.prefs.UserPreferences
 import com.retro.gba.emulator.GbaInput
 import com.retro.gba.ui.haptics.HapticManager
 import com.retro.gba.ui.theme.GbaBackground
-import com.retro.gba.ui.theme.GbaPrimary
 import com.retro.gba.ui.theme.GbaSecondary
+import com.retro.gba.ui.theme.LocalAppThemeColors
+import com.retro.gba.ui.theme.RetroGBATheme
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -67,44 +69,100 @@ data class ControllerPalette(
     val textColor: Color
 )
 
-fun getControllerPalette(theme: String): ControllerPalette {
-    return if (theme == UserPreferences.THEME_RETRO_GBA) {
-        ControllerPalette(
-            isCleanMyBoy = false,
-            dpadBackground = Color(0xAA2B283A),
-            dpadPressed = Color(0xCC5D48B3),
-            dpadStroke = Color(0x66FFFFFF),
-            buttonABackground = Color(0xCC2E7D32), // Verde Esmeralda
-            buttonBBackground = Color(0xCCC62828), // Vermelho Rubi
-            buttonAbBackground = Color(0xCC5D48B3), // Roxo Índigo
-            shoulderBackground = Color(0xAA3B3B54),
-            systemBackground = Color(0xAA423B5A),
-            buttonPressedHighlight = Color(0xAA00E5FF),
-            buttonBorderColor = Color(0x77FFFFFF),
-            textColor = Color.White
-        )
+fun getControllerPalette(
+    theme: String = UserPreferences.THEME_FOLLOW_APP,
+    appTheme: String = UserPreferences.APP_THEME_GBA_INDIGO
+): ControllerPalette {
+    val effectiveTheme = if (theme == UserPreferences.THEME_FOLLOW_APP) {
+        when (appTheme) {
+            UserPreferences.APP_THEME_GLACIER -> UserPreferences.THEME_GLACIER
+            UserPreferences.APP_THEME_SP_PLATINUM -> UserPreferences.THEME_SP_PLATINUM
+            UserPreferences.APP_THEME_FAMICOM -> UserPreferences.THEME_FAMICOM
+            UserPreferences.APP_THEME_OLED_STEALTH -> UserPreferences.THEME_OLED_STEALTH
+            else -> UserPreferences.THEME_GBA_INDIGO
+        }
     } else {
-        // CLEAN_MYBOY: Minimalista, translúcido e nítido
-        ControllerPalette(
+        theme
+    }
+
+    return when (effectiveTheme) {
+        UserPreferences.THEME_GLACIER -> ControllerPalette(
             isCleanMyBoy = true,
-            dpadBackground = Color(0x5014141C),
-            dpadPressed = Color(0x8800E5FF),
+            dpadBackground = Color(0x55142436),
+            dpadPressed = Color(0x9038BDF8),
+            dpadStroke = Color(0x857DD3FC),
+            buttonABackground = Color(0x55142436),
+            buttonBBackground = Color(0x55142436),
+            buttonAbBackground = Color(0x55142436),
+            shoulderBackground = Color(0x55142436),
+            systemBackground = Color(0x55142436),
+            buttonPressedHighlight = Color(0x9938BDF8),
+            buttonBorderColor = Color(0x857DD3FC),
+            textColor = Color(0xFFF0F9FF)
+        )
+        UserPreferences.THEME_SP_PLATINUM -> ControllerPalette(
+            isCleanMyBoy = false,
+            dpadBackground = Color(0x701C2028),
+            dpadPressed = Color(0x9560A5FA),
+            dpadStroke = Color(0x8094A3B8),
+            buttonABackground = Color(0x752A303C),
+            buttonBBackground = Color(0x752A303C),
+            buttonAbBackground = Color(0x75222731),
+            shoulderBackground = Color(0x70222731),
+            systemBackground = Color(0x70222731),
+            buttonPressedHighlight = Color(0xA060A5FA),
+            buttonBorderColor = Color(0x80CBD5E1),
+            textColor = Color(0xFFF8FAFC)
+        )
+        UserPreferences.THEME_FAMICOM -> ControllerPalette(
+            isCleanMyBoy = false,
+            dpadBackground = Color(0x751E181B),
+            dpadPressed = Color(0x99EAB308),
+            dpadStroke = Color(0x80EAB308),
+            buttonABackground = Color(0x80991B1B),
+            buttonBBackground = Color(0x807F1D1D),
+            buttonAbBackground = Color(0x805F1212),
+            shoulderBackground = Color(0x702E1920),
+            systemBackground = Color(0x702E1920),
+            buttonPressedHighlight = Color(0xB5EAB308),
+            buttonBorderColor = Color(0x80FACC15),
+            textColor = Color(0xFFFFF1F2)
+        )
+        UserPreferences.THEME_OLED_STEALTH, UserPreferences.THEME_CLEAN_MYBOY -> ControllerPalette(
+            isCleanMyBoy = true,
+            dpadBackground = Color(0x3514141C),
+            dpadPressed = Color(0x75FFFFFF),
             dpadStroke = Color.White.copy(alpha = 0.55f),
-            buttonABackground = Color(0x5014141C),
-            buttonBBackground = Color(0x5014141C),
-            buttonAbBackground = Color(0x5014141C),
-            shoulderBackground = Color(0x5014141C),
-            systemBackground = Color(0x5014141C),
-            buttonPressedHighlight = Color(0x8800E5FF),
+            buttonABackground = Color(0x3514141C),
+            buttonBBackground = Color(0x3514141C),
+            buttonAbBackground = Color(0x3514141C),
+            shoulderBackground = Color(0x3514141C),
+            systemBackground = Color(0x3514141C),
+            buttonPressedHighlight = Color.White.copy(alpha = 0.70f),
             buttonBorderColor = Color.White.copy(alpha = 0.55f),
             textColor = Color.White.copy(alpha = 0.95f)
+        )
+        else -> /* THEME_GBA_INDIGO, THEME_RETRO_GBA, fallback */ ControllerPalette(
+            isCleanMyBoy = false,
+            dpadBackground = Color(0x702A273B),
+            dpadPressed = Color(0x955D48B3),
+            dpadStroke = Color(0x90A29BFE),
+            buttonABackground = Color(0x808C3B4E), // Vinho nostálgico clássico A
+            buttonBBackground = Color(0x806B2D3C), // Vinho nostálgico clássico B
+            buttonAbBackground = Color(0x80502A3C),
+            shoulderBackground = Color(0x70322C4A),
+            systemBackground = Color(0x702F2944),
+            buttonPressedHighlight = Color(0xB0A29BFE),
+            buttonBorderColor = Color(0x80A29BFE),
+            textColor = Color(0xFFF1F0F7)
         )
     }
 }
 
 /**
- * D-Pad Contínuo vetorial de 8 direções desenhado via Canvas com cantos arredondados,
- * setas direcionais vetoriais e atualização diferencial de toques para evitar stuck buttons.
+ * D-Pad Contínuo vetorial fiel ao My Boy!:
+ * 4 blocos retangulares arredondados separados em cruz, com setas chanfradas/pentagonais vazadas
+ * e centro aberto. O bloco inteiro escala como um único grupo ("dpad").
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -112,7 +170,7 @@ fun ContinuousDPad(
     onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     palette: ControllerPalette = getControllerPalette(UserPreferences.THEME_CLEAN_MYBOY),
-    size: Dp = 138.dp,
+    size: Dp = 136.dp,
     isEditMode: Boolean = false,
     onPressHaptic: () -> Unit = {}
 ) {
@@ -134,8 +192,8 @@ fun ContinuousDPad(
     val density = LocalDensity.current
     val sizePx = with(density) { size.toPx() }
     val centerPx = sizePx / 2f
-    val radiusPx = sizePx / 2f
-    val deadzonePx = radiusPx * 0.16f
+    val deadzonePx = sizePx * 0.12f
+    val outerRadiusPx = sizePx * 0.58f
 
     Box(
         contentAlignment = Alignment.Center,
@@ -145,12 +203,12 @@ fun ContinuousDPad(
                 if (isEditMode) return@pointerInteropFilter false
 
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_POINTER_DOWN -> {
                         val dx = event.x - centerPx
                         val dy = event.y - centerPx
                         val dist = hypot(dx, dy)
 
-                        val newMask = if (dist < deadzonePx || dist > radiusPx * 1.35f) {
+                        val newMask = if (dist < deadzonePx || dist > outerRadiusPx) {
                             0
                         } else {
                             var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble()))
@@ -197,161 +255,384 @@ fun ContinuousDPad(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = this.size.width
             val h = this.size.height
-            val armThick = w * 0.36f
-            val armMargin = (w - armThick) / 2f
-            val cornerRad = CornerRadius(8.dp.toPx(), 8.dp.toPx())
-
-            // Fundo horizontal e vertical da cruz
-            drawRoundRect(
-                color = palette.dpadBackground,
-                topLeft = Offset(0f, armMargin),
-                size = Size(w, armThick),
-                cornerRadius = cornerRad
-            )
-            drawRoundRect(
-                color = palette.dpadBackground,
-                topLeft = Offset(armMargin, 0f),
-                size = Size(armThick, h),
-                cornerRadius = cornerRad
-            )
-
-            // Destaque visual dos setores pressionados (inclui diagonais)
-            if ((currentMask and GbaInput.BUTTON_UP) != 0) {
-                drawRoundRect(
-                    color = palette.dpadPressed,
-                    topLeft = Offset(armMargin, 0f),
-                    size = Size(armThick, armMargin + armThick / 2f),
-                    cornerRadius = cornerRad
-                )
-            }
-            if ((currentMask and GbaInput.BUTTON_DOWN) != 0) {
-                drawRoundRect(
-                    color = palette.dpadPressed,
-                    topLeft = Offset(armMargin, armMargin + armThick / 2f),
-                    size = Size(armThick, armMargin + armThick / 2f),
-                    cornerRadius = cornerRad
-                )
-            }
-            if ((currentMask and GbaInput.BUTTON_LEFT) != 0) {
-                drawRoundRect(
-                    color = palette.dpadPressed,
-                    topLeft = Offset(0f, armMargin),
-                    size = Size(armMargin + armThick / 2f, armThick),
-                    cornerRadius = cornerRad
-                )
-            }
-            if ((currentMask and GbaInput.BUTTON_RIGHT) != 0) {
-                drawRoundRect(
-                    color = palette.dpadPressed,
-                    topLeft = Offset(armMargin + armThick / 2f, armMargin),
-                    size = Size(armMargin + armThick / 2f, armThick),
-                    cornerRadius = cornerRad
-                )
-            }
-
-            // Contornos vetoriais nítidos
+            val armThick = w * 0.33f
+            val armLen = w * 0.40f
+            val cornerRad = CornerRadius(7.dp.toPx(), 7.dp.toPx())
             val strokeWidth = 1.75.dp.toPx()
+
+            val isUpPressed = (currentMask and GbaInput.BUTTON_UP) != 0
+            val isDownPressed = (currentMask and GbaInput.BUTTON_DOWN) != 0
+            val isLeftPressed = (currentMask and GbaInput.BUTTON_LEFT) != 0
+            val isRightPressed = (currentMask and GbaInput.BUTTON_RIGHT) != 0
+
+            // 1. Bloco de Cima
+            val upLeft = (w - armThick) / 2f
+            val upTop = 0f
             drawRoundRect(
-                color = palette.dpadStroke,
-                topLeft = Offset(0f, armMargin),
-                size = Size(w, armThick),
-                cornerRadius = cornerRad,
-                style = Stroke(width = strokeWidth)
+                color = if (isUpPressed) palette.dpadPressed else palette.dpadBackground,
+                topLeft = Offset(upLeft, upTop),
+                size = Size(armThick, armLen),
+                cornerRadius = cornerRad
             )
             drawRoundRect(
                 color = palette.dpadStroke,
-                topLeft = Offset(armMargin, 0f),
-                size = Size(armThick, h),
+                topLeft = Offset(upLeft, upTop),
+                size = Size(armThick, armLen),
                 cornerRadius = cornerRad,
                 style = Stroke(width = strokeWidth)
             )
 
-            // Reentrância central côncava
+            // Seta Pentagonal Vazada Cima (estilo My Boy!)
+            val upMidX = w / 2f
+            val upArrowTop = armLen * 0.22f
+            val upArrowW = armThick * 0.38f
+            val upArrowH = armLen * 0.46f
+            val upPath = Path().apply {
+                moveTo(upMidX, upArrowTop) // Ponta da seta
+                lineTo(upMidX + upArrowW, upArrowTop + upArrowH * 0.45f)
+                lineTo(upMidX + upArrowW, upArrowTop + upArrowH)
+                lineTo(upMidX - upArrowW, upArrowTop + upArrowH)
+                lineTo(upMidX - upArrowW, upArrowTop + upArrowH * 0.45f)
+                close()
+            }
+            drawPath(upPath, palette.dpadStroke, style = Stroke(width = 1.6.dp.toPx()))
+
+            // 2. Bloco de Baixo
+            val downLeft = (w - armThick) / 2f
+            val downTop = h - armLen
+            drawRoundRect(
+                color = if (isDownPressed) palette.dpadPressed else palette.dpadBackground,
+                topLeft = Offset(downLeft, downTop),
+                size = Size(armThick, armLen),
+                cornerRadius = cornerRad
+            )
+            drawRoundRect(
+                color = palette.dpadStroke,
+                topLeft = Offset(downLeft, downTop),
+                size = Size(armThick, armLen),
+                cornerRadius = cornerRad,
+                style = Stroke(width = strokeWidth)
+            )
+
+            // Seta Pentagonal Vazada Baixo
+            val downMidX = w / 2f
+            val downArrowBottom = h - armLen * 0.22f
+            val downArrowTop = downArrowBottom - upArrowH
+            val downPath = Path().apply {
+                moveTo(downMidX, downArrowBottom) // Ponta da seta
+                lineTo(downMidX + upArrowW, downArrowBottom - upArrowH * 0.45f)
+                lineTo(downMidX + upArrowW, downArrowTop)
+                lineTo(downMidX - upArrowW, downArrowTop)
+                lineTo(downMidX - upArrowW, downArrowBottom - upArrowH * 0.45f)
+                close()
+            }
+            drawPath(downPath, palette.dpadStroke, style = Stroke(width = 1.6.dp.toPx()))
+
+            // 3. Bloco da Esquerda
+            val leftLeft = 0f
+            val leftTop = (h - armThick) / 2f
+            drawRoundRect(
+                color = if (isLeftPressed) palette.dpadPressed else palette.dpadBackground,
+                topLeft = Offset(leftLeft, leftTop),
+                size = Size(armLen, armThick),
+                cornerRadius = cornerRad
+            )
+            drawRoundRect(
+                color = palette.dpadStroke,
+                topLeft = Offset(leftLeft, leftTop),
+                size = Size(armLen, armThick),
+                cornerRadius = cornerRad,
+                style = Stroke(width = strokeWidth)
+            )
+
+            // Seta Pentagonal Vazada Esquerda
+            val leftMidY = h / 2f
+            val leftArrowLeft = armLen * 0.22f
+            val leftPath = Path().apply {
+                moveTo(leftArrowLeft, leftMidY) // Ponta da seta
+                lineTo(leftArrowLeft + upArrowH * 0.45f, leftMidY - upArrowW)
+                lineTo(leftArrowLeft + upArrowH, leftMidY - upArrowW)
+                lineTo(leftArrowLeft + upArrowH, leftMidY + upArrowW)
+                lineTo(leftArrowLeft + upArrowH * 0.45f, leftMidY + upArrowW)
+                close()
+            }
+            drawPath(leftPath, palette.dpadStroke, style = Stroke(width = 1.6.dp.toPx()))
+
+            // 4. Bloco da Direita
+            val rightLeft = w - armLen
+            val rightTop = (h - armThick) / 2f
+            drawRoundRect(
+                color = if (isRightPressed) palette.dpadPressed else palette.dpadBackground,
+                topLeft = Offset(rightLeft, rightTop),
+                size = Size(armLen, armThick),
+                cornerRadius = cornerRad
+            )
+            drawRoundRect(
+                color = palette.dpadStroke,
+                topLeft = Offset(rightLeft, rightTop),
+                size = Size(armLen, armThick),
+                cornerRadius = cornerRad,
+                style = Stroke(width = strokeWidth)
+            )
+
+            // Seta Pentagonal Vazada Direita
+            val rightMidY = h / 2f
+            val rightArrowRight = w - armLen * 0.22f
+            val rightPath = Path().apply {
+                moveTo(rightArrowRight, rightMidY) // Ponta da seta
+                lineTo(rightArrowRight - upArrowH * 0.45f, rightMidY - upArrowW)
+                lineTo(rightArrowRight - upArrowH, rightMidY - upArrowW)
+                lineTo(rightArrowRight - upArrowH, rightMidY + upArrowW)
+                lineTo(rightArrowRight - upArrowH * 0.45f, rightMidY + upArrowW)
+                close()
+            }
+            drawPath(rightPath, palette.dpadStroke, style = Stroke(width = 1.6.dp.toPx()))
+
+            // Centro suavemente translúcido
             drawCircle(
-                color = Color.Black.copy(alpha = 0.28f),
-                radius = armThick * 0.30f,
+                color = Color.Black.copy(alpha = 0.25f),
+                radius = armThick * 0.26f,
                 center = Offset(w / 2f, h / 2f)
             )
-
-            // Setas direcionais vetoriais
-            val arrowSize = 5.5.dp.toPx()
-            val arrowColor = if (palette.isCleanMyBoy) Color.White.copy(alpha = 0.70f) else Color.LightGray
-
-            // Seta Cima
-            val upPath = Path().apply {
-                moveTo(w / 2f, armMargin * 0.38f)
-                lineTo(w / 2f - arrowSize, armMargin * 0.38f + arrowSize)
-                lineTo(w / 2f + arrowSize, armMargin * 0.38f + arrowSize)
-                close()
-            }
-            drawPath(upPath, arrowColor)
-
-            // Seta Baixo
-            val downPath = Path().apply {
-                moveTo(w / 2f, h - armMargin * 0.38f)
-                lineTo(w / 2f - arrowSize, h - armMargin * 0.38f - arrowSize)
-                lineTo(w / 2f + arrowSize, h - armMargin * 0.38f - arrowSize)
-                close()
-            }
-            drawPath(downPath, arrowColor)
-
-            // Seta Esquerda
-            val leftPath = Path().apply {
-                moveTo(armMargin * 0.38f, h / 2f)
-                lineTo(armMargin * 0.38f + arrowSize, h / 2f - arrowSize)
-                lineTo(armMargin * 0.38f + arrowSize, h / 2f + arrowSize)
-                close()
-            }
-            drawPath(leftPath, arrowColor)
-
-            // Seta Direita
-            val rightPath = Path().apply {
-                moveTo(w - armMargin * 0.38f, h / 2f)
-                lineTo(w - armMargin * 0.38f - arrowSize, h / 2f - arrowSize)
-                lineTo(w - armMargin * 0.38f - arrowSize, h / 2f + arrowSize)
-                close()
-            }
-            drawPath(rightPath, arrowColor)
         }
     }
 }
 
 /**
- * Alias retrocompatível para ContinuousDPad.
- */
-@Composable
-fun DPad(
-    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    palette: ControllerPalette = getControllerPalette(UserPreferences.THEME_CLEAN_MYBOY),
-    size: Dp = 138.dp,
-    isEditMode: Boolean = false,
-    onPressHaptic: () -> Unit = {}
-) {
-    ContinuousDPad(
-        onButtonChange = onButtonChange,
-        modifier = modifier,
-        palette = palette,
-        size = size,
-        isEditMode = isEditMode,
-        onPressHaptic = onPressHaptic
-    )
-}
-
-/**
- * Botão circular individual com detecção actionMasked e proteção anti-stuck via DisposableEffect.
+ * Gatilho superior anatômico (L ou R) desenhado via Path com o chanfro curvo fiel ao My Boy!
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ControllerButton(
+fun AnatomicalShoulderButton(
+    isLeft: Boolean,
+    buttonMask: Int,
+    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    scale: Float = 1.0f,
+    palette: ControllerPalette = getControllerPalette(UserPreferences.THEME_CLEAN_MYBOY),
+    isEditMode: Boolean = false,
+    onPressHaptic: () -> Unit = {}
+) {
+    var isPressed by remember { mutableStateOf(false) }
+
+    DisposableEffect(buttonMask, isEditMode) {
+        onDispose {
+            if (isPressed) {
+                isPressed = false
+                onButtonChange(buttonMask, false)
+            }
+        }
+    }
+
+    val widthDp = (80.dp * scale).coerceIn(40.dp, 160.dp)
+    val heightDp = (36.dp * scale).coerceIn(20.dp, 80.dp)
+
+    Box(
+        contentAlignment = if (isLeft) Alignment.CenterStart else Alignment.CenterEnd,
+        modifier = modifier
+            .width(widthDp)
+            .height(heightDp)
+            .pointerInteropFilter { event ->
+                if (isEditMode) return@pointerInteropFilter false
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                        if (!isPressed) {
+                            isPressed = true
+                            onPressHaptic()
+                            onButtonChange(buttonMask, true)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (isPressed) {
+                            isPressed = false
+                            onButtonChange(buttonMask, false)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = this.size.width
+            val h = this.size.height
+            val strokeW = 1.75.dp.toPx()
+            val r = 8.dp.toPx()
+
+            val shoulderPath = Path().apply {
+                if (isLeft) {
+                    // Gatilho L: lateral externa esquerda alta, chanfro descendo para direita
+                    moveTo(0f, r)
+                    quadraticTo(0f, 0f, r, 0f)
+                    lineTo(w - r, 0f)
+                    quadraticTo(w, 0f, w, r * 0.8f)
+                    // Curva inferior que sobe para dentro
+                    quadraticTo(w * 0.50f, h * 0.40f, r, h)
+                    quadraticTo(0f, h, 0f, h - r)
+                    close()
+                } else {
+                    // Gatilho R: lateral externa direita alta, chanfro descendo para esquerda
+                    moveTo(w, r)
+                    quadraticTo(w, 0f, w - r, 0f)
+                    lineTo(r, 0f)
+                    quadraticTo(0f, 0f, 0f, r * 0.8f)
+                    // Curva inferior que sobe para dentro
+                    quadraticTo(w * 0.50f, h * 0.40f, w - r, h)
+                    quadraticTo(w, h, w, h - r)
+                    close()
+                }
+            }
+
+            drawPath(
+                path = shoulderPath,
+                color = if (isPressed) palette.buttonPressedHighlight else palette.shoulderBackground
+            )
+            drawPath(
+                path = shoulderPath,
+                color = palette.buttonBorderColor,
+                style = Stroke(width = strokeW)
+            )
+        }
+
+        Text(
+            text = if (isLeft) "L" else "R",
+            color = palette.textColor,
+            fontWeight = FontWeight.Bold,
+            fontSize = (15f * scale.coerceIn(0.7f, 1.4f)).sp,
+            modifier = Modifier.padding(horizontal = (12.dp * scale).coerceIn(6.dp, 24.dp))
+        )
+    }
+}
+
+/**
+ * Botão clássico de Menu vazado (☰) estilo My Boy!:
+ * Quadrado com cantos arredondados contendo 3 linhas horizontais internas.
+ */
+@Composable
+fun MenuHambugerButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    scale: Float = 1.0f,
+    palette: ControllerPalette = getControllerPalette(UserPreferences.THEME_CLEAN_MYBOY),
+    isEditMode: Boolean = false,
+    onPressHaptic: () -> Unit = {}
+) {
+    val sizeDp = (38.dp * scale).coerceIn(24.dp, 80.dp)
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(sizeDp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(palette.systemBackground)
+            .border(1.75.dp, palette.buttonBorderColor, RoundedCornerShape(8.dp))
+            .clickable(enabled = !isEditMode) {
+                onPressHaptic()
+                onClick()
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(sizeDp * 0.22f)) {
+            val w = this.size.width
+            val h = this.size.height
+            val lineStroke = (2.2.dp * scale.coerceIn(0.7f, 1.4f)).toPx()
+            val lineColor = palette.textColor
+
+            // 3 Barras horizontais
+            drawLine(lineColor, Offset(0f, h * 0.15f), Offset(w, h * 0.15f), strokeWidth = lineStroke)
+            drawLine(lineColor, Offset(0f, h * 0.50f), Offset(w, h * 0.50f), strokeWidth = lineStroke)
+            drawLine(lineColor, Offset(0f, h * 0.85f), Offset(w, h * 0.85f), strokeWidth = lineStroke)
+        }
+    }
+}
+
+/**
+ * Pílula horizontal independente vazada estilo My Boy! para SELECT e START.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun SystemPillButton(
     text: String,
     buttonMask: Int,
     onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 50.dp,
-    containerColor: Color = Color(0x5014141C),
+    scale: Float = 1.0f,
+    palette: ControllerPalette = getControllerPalette(UserPreferences.THEME_CLEAN_MYBOY),
+    isEditMode: Boolean = false,
+    onPressHaptic: () -> Unit = {}
+) {
+    var isPressed by remember { mutableStateOf(false) }
+
+    DisposableEffect(buttonMask, isEditMode) {
+        onDispose {
+            if (isPressed) {
+                isPressed = false
+                onButtonChange(buttonMask, false)
+            }
+        }
+    }
+
+    val pillWidth = (46.dp * scale).coerceIn(26.dp, 96.dp)
+    val pillHeight = (18.dp * scale).coerceIn(12.dp, 40.dp)
+
+    Column(
+        modifier = modifier
+            .pointerInteropFilter { event ->
+                if (isEditMode) return@pointerInteropFilter false
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                        if (!isPressed) {
+                            isPressed = true
+                            onPressHaptic()
+                            onButtonChange(buttonMask, true)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (isPressed) {
+                            isPressed = false
+                            onButtonChange(buttonMask, false)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .width(pillWidth)
+                .height(pillHeight)
+                .clip(RoundedCornerShape(pillHeight / 2f))
+                .background(if (isPressed) palette.buttonPressedHighlight else palette.systemBackground)
+                .border(1.6.dp, if (isPressed) palette.buttonPressedHighlight else palette.buttonBorderColor, RoundedCornerShape(pillHeight / 2f))
+        )
+        Text(
+            text = text,
+            color = palette.textColor,
+            fontSize = (8.5f * scale.coerceIn(0.7f, 1.3f)).sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+    }
+}
+
+/**
+ * Botão circular de ação individual (A, B ou A+B) vazado e nítido.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun ActionCircleButton(
+    text: String,
+    buttonMask: Int,
+    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 52.dp,
+    containerColor: Color = Color(0x4014141C),
     pressedColor: Color = Color(0x8800E5FF),
-    borderColor: Color = Color.White.copy(alpha = 0.55f),
+    borderColor: Color = Color.White.copy(alpha = 0.65f),
     textColor: Color = Color.White,
     isEditMode: Boolean = false,
     onPressHaptic: () -> Unit = {}
@@ -377,378 +658,91 @@ fun ControllerButton(
             .pointerInteropFilter { event ->
                 if (isEditMode) return@pointerInteropFilter false
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        isPressed = true
-                        onPressHaptic()
-                        onButtonChange(buttonMask, true)
-                        true
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        if (isPressed) {
-                            isPressed = false
-                            onButtonChange(buttonMask, false)
-                        }
-                        true
-                    }
-                    else -> false
-                }
-            }
-    ) {
-        Text(
-            text = text,
-            color = textColor,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size.value * 0.40f).sp
-        )
-    }
-}
-
-/**
- * Gatilho superior L ou R.
- */
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-fun ShoulderButton(
-    text: String,
-    buttonMask: Int,
-    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    containerColor: Color = Color(0x5014141C),
-    pressedColor: Color = Color(0x8800E5FF),
-    borderColor: Color = Color.White.copy(alpha = 0.55f),
-    textColor: Color = Color.White,
-    isEditMode: Boolean = false,
-    onPressHaptic: () -> Unit = {}
-) {
-    var isPressed by remember { mutableStateOf(false) }
-
-    DisposableEffect(buttonMask, isEditMode) {
-        onDispose {
-            if (isPressed) {
-                isPressed = false
-                onButtonChange(buttonMask, false)
-            }
-        }
-    }
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .width(78.dp)
-            .height(34.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isPressed) pressedColor else containerColor)
-            .border(1.5.dp, if (isPressed) pressedColor else borderColor, RoundedCornerShape(8.dp))
-            .pointerInteropFilter { event ->
-                if (isEditMode) return@pointerInteropFilter false
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        isPressed = true
-                        onPressHaptic()
-                        onButtonChange(buttonMask, true)
-                        true
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        if (isPressed) {
-                            isPressed = false
-                            onButtonChange(buttonMask, false)
-                        }
-                        true
-                    }
-                    else -> false
-                }
-            }
-    ) {
-        Text(
-            text = text,
-            color = textColor,
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp
-        )
-    }
-}
-
-/**
- * Botão de sistema clássico (SELECT / START).
- */
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-fun SystemButton(
-    text: String,
-    buttonMask: Int,
-    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    containerColor: Color = Color(0x5014141C),
-    pressedColor: Color = Color(0x8800E5FF),
-    borderColor: Color = Color.White.copy(alpha = 0.45f),
-    textColor: Color = Color.LightGray,
-    isEditMode: Boolean = false,
-    onPressHaptic: () -> Unit = {}
-) {
-    var isPressed by remember { mutableStateOf(false) }
-
-    DisposableEffect(buttonMask, isEditMode) {
-        onDispose {
-            if (isPressed) {
-                isPressed = false
-                onButtonChange(buttonMask, false)
-            }
-        }
-    }
-
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .width(46.dp)
-                .height(16.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (isPressed) pressedColor else containerColor)
-                .border(1.2.dp, if (isPressed) pressedColor else borderColor, RoundedCornerShape(8.dp))
-                .pointerInteropFilter { event ->
-                    if (isEditMode) return@pointerInteropFilter false
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
+                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                        if (!isPressed) {
                             isPressed = true
                             onPressHaptic()
                             onButtonChange(buttonMask, true)
-                            true
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            if (isPressed) {
-                                isPressed = false
-                                onButtonChange(buttonMask, false)
-                            }
-                            true
-                        }
-                        else -> false
+                        true
                     }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (isPressed) {
+                            isPressed = false
+                            onButtonChange(buttonMask, false)
+                        }
+                        true
+                    }
+                    else -> false
                 }
-        )
+            }
+    ) {
         Text(
             text = text,
             color = textColor,
-            fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 2.dp)
+            fontSize = (size.value * 0.38f).sp
         )
     }
 }
 
 /**
- * Cluster de ação ergonômico contendo botões B (inferior-esquerdo), A (superior-direito com 30°)
- * e botão combo A+B opcional centralizado.
+ * Container arrastável individual para posicionamento e escala independente no Modo de Edição.
  */
 @Composable
-fun ActionButtonsCluster(
-    onButtonChange: (mask: Int, pressed: Boolean) -> Unit,
-    palette: ControllerPalette,
-    showAbCombo: Boolean = true,
-    isEditMode: Boolean = false,
-    modifier: Modifier = Modifier,
-    onPressHaptic: () -> Unit = {}
-) {
-    val boxWidth = if (showAbCombo) 130.dp else 115.dp
-    val boxHeight = if (showAbCombo) 130.dp else 115.dp
-
-    Box(
-        modifier = modifier.size(width = boxWidth, height = boxHeight)
-    ) {
-        // Botão B (Inferior-Esquerdo)
-        ControllerButton(
-            text = "B",
-            buttonMask = GbaInput.BUTTON_B,
-            onButtonChange = onButtonChange,
-            size = 48.dp,
-            containerColor = palette.buttonBBackground,
-            pressedColor = palette.buttonPressedHighlight,
-            borderColor = palette.buttonBorderColor,
-            textColor = palette.textColor,
-            isEditMode = isEditMode,
-            onPressHaptic = onPressHaptic,
-            modifier = Modifier.align(Alignment.BottomStart)
-        )
-
-        // Botão Combo A+B opcional (Centro)
-        if (showAbCombo) {
-            ControllerButton(
-                text = "A+B",
-                buttonMask = GbaInput.BUTTON_A or GbaInput.BUTTON_B,
-                onButtonChange = onButtonChange,
-                size = 38.dp,
-                containerColor = palette.buttonAbBackground,
-                pressedColor = palette.buttonPressedHighlight,
-                borderColor = palette.buttonBorderColor,
-                textColor = palette.textColor,
-                isEditMode = isEditMode,
-                onPressHaptic = onPressHaptic,
-                modifier = Modifier.align(Alignment.Center)
-            )
-        }
-
-        // Botão A (Superior-Direito)
-        ControllerButton(
-            text = "A",
-            buttonMask = GbaInput.BUTTON_A,
-            onButtonChange = onButtonChange,
-            size = 48.dp,
-            containerColor = palette.buttonABackground,
-            pressedColor = palette.buttonPressedHighlight,
-            borderColor = palette.buttonBorderColor,
-            textColor = palette.textColor,
-            isEditMode = isEditMode,
-            onPressHaptic = onPressHaptic,
-            modifier = Modifier.align(Alignment.TopEnd)
-        )
-    }
-}
-
-/**
- * Barra compacta de Ações Rápidas (Quick Save, Quick Load, Turbo, Menu).
- */
-@Composable
-fun QuickActionsBar(
-    showQuickSaveLoad: Boolean,
-    isTurboActive: Boolean,
-    onTurboToggle: () -> Unit,
-    onMenuClick: () -> Unit,
-    onQuickSave: () -> Unit,
-    onQuickLoad: () -> Unit,
-    modifier: Modifier = Modifier,
-    onPressHaptic: () -> Unit = {}
-) {
-    Row(
-        modifier = modifier
-            .background(Color(0x6014141C), CircleShape)
-            .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (showQuickSaveLoad) {
-            IconButton(
-                onClick = {
-                    onPressHaptic()
-                    onQuickSave()
-                },
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(Color(0x402C2449), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Save,
-                    contentDescription = "Quick Save",
-                    tint = Color.White,
-                    modifier = Modifier.size(17.dp)
-                )
-            }
-
-            IconButton(
-                onClick = {
-                    onPressHaptic()
-                    onQuickLoad()
-                },
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(Color(0x402C2449), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Restore,
-                    contentDescription = "Quick Load",
-                    tint = Color.White,
-                    modifier = Modifier.size(17.dp)
-                )
-            }
-        }
-
-        IconButton(
-            onClick = onTurboToggle,
-            modifier = Modifier
-                .size(32.dp)
-                .background(
-                    if (isTurboActive) GbaSecondary else Color(0x402C2449),
-                    CircleShape
-                )
-        ) {
-            Icon(
-                imageVector = Icons.Default.FastForward,
-                contentDescription = "Turbo",
-                tint = if (isTurboActive) Color.Black else GbaSecondary,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        IconButton(
-            onClick = onMenuClick,
-            modifier = Modifier
-                .size(32.dp)
-                .background(Color(0x402C2449), CircleShape)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Menu",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-/**
- * Caixa arrastável para posicionamento livre no Modo de Edição de Layout.
- */
-@Composable
-fun DraggableControlBox(
+fun EditableControlBox(
     id: String,
-    isLandscape: Boolean,
-    isEditMode: Boolean,
-    offsetMap: Map<String, Pair<Float, Float>>,
-    onOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit,
     label: String,
+    isEditMode: Boolean,
+    isSelected: Boolean,
+    onSelect: (String) -> Unit,
+    state: ControlElementState,
+    onOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit,
+    onScaleChange: (id: String, scale: Float) -> Unit,
     modifier: Modifier = Modifier,
-    scale: Float = 1.0f,
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
-    val currentOffset = offsetMap[id] ?: Pair(0f, 0f)
-    var localDx by remember(id, isLandscape) { mutableFloatStateOf(currentOffset.first) }
-    var localDy by remember(id, isLandscape) { mutableFloatStateOf(currentOffset.second) }
-    LaunchedEffect(currentOffset.first, currentOffset.second) {
-        localDx = currentOffset.first
-        localDy = currentOffset.second
-    }
+
+    val currentDx = state.dx
+    val currentDy = state.dy
+    val currentScale = state.scale
+
+    val updatedOnOffset = rememberUpdatedState(onOffsetChange)
+    val updatedOnScale = rememberUpdatedState(onScaleChange)
 
     Box(
         modifier = modifier
             .offset {
                 IntOffset(
-                    (localDx * density.density).roundToInt(),
-                    (localDy * density.density).roundToInt()
+                    (currentDx * density.density).roundToInt(),
+                    (currentDy * density.density).roundToInt()
                 )
             }
-            .scale(scale)
             .then(
                 if (isEditMode) {
                     Modifier
+                        .clickable { onSelect(id) }
                         .border(
-                            width = 1.5.dp,
-                            color = GbaSecondary,
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) GbaSecondary else Color.White.copy(alpha = 0.35f),
                             shape = RoundedCornerShape(8.dp)
                         )
                         .background(
-                            color = GbaSecondary.copy(alpha = 0.12f),
+                            color = if (isSelected) GbaSecondary.copy(alpha = 0.15f) else Color.Transparent,
                             shape = RoundedCornerShape(8.dp)
                         )
-                        .pointerInput(id, isLandscape) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                val newDx = (localDx + dragAmount.x / density.density).coerceIn(-280f, 280f)
-                                val newDy = (localDy + dragAmount.y / density.density).coerceIn(-280f, 280f)
-                                localDx = newDx
-                                localDy = newDy
-                                onOffsetChange(id, newDx, newDy)
+                        .pointerInput(id) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                onSelect(id)
+                                val newDx = (currentDx + pan.x / density.density).coerceIn(-360f, 360f)
+                                val newDy = (currentDy + pan.y / density.density).coerceIn(-260f, 260f)
+                                updatedOnOffset.value(id, newDx, newDy)
+
+                                if (zoom != 1f) {
+                                    val newScale = (currentScale * zoom).coerceIn(0.50f, 1.80f)
+                                    updatedOnScale.value(id, newScale)
+                                }
                             }
                         }
                 } else {
@@ -759,14 +753,14 @@ fun DraggableControlBox(
         content()
         if (isEditMode) {
             Surface(
-                color = GbaSecondary,
+                color = if (isSelected) GbaSecondary else Color(0xCC1E1A2E),
                 shape = RoundedCornerShape(bottomEnd = 4.dp),
                 modifier = Modifier.align(Alignment.TopStart)
             ) {
                 Text(
-                    text = label,
-                    color = Color.Black,
-                    fontSize = 8.sp,
+                    text = if (isSelected) "$label ${(currentScale * 100).toInt()}%" else label,
+                    color = if (isSelected) Color.Black else Color.White,
+                    fontSize = 7.5.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                 )
@@ -776,89 +770,123 @@ fun DraggableControlBox(
 }
 
 /**
- * Banner superior do Modo de Edição de Layout com ajuste de escala e botões de ação.
+ * Painel flutuante compacto posicionado no centro da tela do jogo no Modo de Edição,
+ * permitindo ajustar o tamanho do botão selecionado sem cobrir L ou R.
  */
 @Composable
-fun LayoutEditToolbar(
-    isLandscape: Boolean,
+fun LayoutEditOverlayCard(
+    selectedControlId: String?,
+    selectedControlLabel: String,
     scale: Float,
+    isLandscape: Boolean,
     onScaleChange: (Float) -> Unit,
-    onResetLayout: () -> Unit,
+    onResetCurrentItem: () -> Unit,
+    onResetAll: () -> Unit,
     onExitEditMode: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = Color(0xEE1E1A2E),
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, GbaSecondary.copy(alpha = 0.6f)),
+        color = Color(0xF0181524),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.2.dp, GbaSecondary.copy(alpha = 0.75f)),
+        shadowElevation = 8.dp,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .widthIn(max = 340.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Editando Layout (${if (isLandscape) "Paisagem" else "Retrato"})",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
+                Column {
+                    Text(
+                        text = "Edição (${if (isLandscape) "Deitado" else "Em Pé"})",
+                        color = Color.Gray,
+                        fontSize = 10.sp
+                    )
+                    Text(
+                        text = if (selectedControlId != null) "Botão: $selectedControlLabel" else "Toque em um botão para editar",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(
-                        onClick = onResetLayout,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.LightGray)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Padrão", fontSize = 11.sp, color = Color.LightGray)
-                    }
+                Button(
+                    onClick = onExitEditMode,
+                    colors = ButtonDefaults.buttonColors(containerColor = GbaSecondary),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.Black)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Salvar", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
 
-                    Button(
-                        onClick = onExitEditMode,
-                        colors = ButtonDefaults.buttonColors(containerColor = GbaSecondary),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Black)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Concluir", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
+            if (selectedControlId != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "${(scale * 100).toInt()}%",
+                        fontSize = 11.sp,
+                        color = GbaSecondary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(38.dp)
+                    )
+                    Slider(
+                        value = scale,
+                        onValueChange = onScaleChange,
+                        valueRange = 0.50f..1.80f,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Escala: ${(scale * 100).toInt()}%",
-                    fontSize = 11.sp,
-                    color = GbaSecondary,
-                    fontWeight = FontWeight.Bold
-                )
-                Slider(
-                    value = scale,
-                    onValueChange = onScaleChange,
-                    valueRange = 0.75f..1.45f,
-                    modifier = Modifier.weight(1f)
-                )
+                if (selectedControlId != null) {
+                    TextButton(
+                        onClick = onResetCurrentItem,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.height(26.dp)
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.LightGray)
+                        Spacer(Modifier.width(3.dp))
+                        Text("Resetar Botão", fontSize = 10.sp, color = Color.LightGray)
+                    }
+                } else {
+                    Spacer(Modifier.width(1.dp))
+                }
+
+                TextButton(
+                    onClick = onResetAll,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFFFF8A80))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Resetar Tudo", fontSize = 10.sp, color = Color(0xFFFF8A80))
+                }
             }
         }
     }
 }
 
 /**
- * Controlador Virtual em Modo Retrato (Vertical).
+ * Controlador Virtual em Modo Retrato (Em Pé):
+ * Distribuído na metade inferior da tela abaixo do display do GBA com estética fiel ao My Boy!
  */
 @Composable
 fun PortraitVirtualController(
@@ -867,17 +895,20 @@ fun PortraitVirtualController(
     onTurboToggle: () -> Unit,
     modifier: Modifier = Modifier,
     opacity: Float = 0.85f,
-    scale: Float = 1.0f,
-    theme: String = UserPreferences.THEME_CLEAN_MYBOY,
-    showQuickSaveLoad: Boolean = true,
-    showAbCombo: Boolean = true,
-    isTurboActive: Boolean = false,
-    isEditMode: Boolean = false,
-    offsets: Map<String, Pair<Float, Float>> = emptyMap(),
-    onOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit = { _, _, _ -> },
+    theme: String = UserPreferences.THEME_FOLLOW_APP,
+    controls: Map<String, ControlElementState> = emptyMap(),
+    onControlOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit = { _, _, _ -> },
+    onControlScaleChange: (id: String, scale: Float) -> Unit = { _, _ -> },
+    onResetSingleControl: (id: String) -> Unit = {},
     onResetLayout: () -> Unit = {},
     onExitEditMode: () -> Unit = {},
-    onScaleChange: (Float) -> Unit = {},
+    showAbCombo: Boolean = false,
+    showQuickSaveLoad: Boolean = false,
+    showTurboButton: Boolean = false,
+    showFpsCounter: Boolean = false,
+    currentFps: Int? = null,
+    isTurboActive: Boolean = false,
+    isEditMode: Boolean = false,
     onQuickSave: () -> Unit = {},
     onQuickLoad: () -> Unit = {},
     hapticFeedbackEnabled: Boolean = true
@@ -887,183 +918,412 @@ fun PortraitVirtualController(
     val onHapticClick = remember(hapticFeedbackEnabled) {
         { hapticManager.performButtonClick(hapticFeedbackEnabled) }
     }
-    val palette = remember(theme) { getControllerPalette(theme) }
+    val currentAppTheme = LocalAppThemeColors.current.id
+    val palette = remember(theme, currentAppTheme) { getControllerPalette(theme, currentAppTheme) }
 
-    Column(
+    var selectedControlId by remember { mutableStateOf<String?>(null) }
+
+    val labels = mapOf(
+        "dpad" to "D-Pad",
+        "l_button" to "L",
+        "r_button" to "R",
+        "menu_button" to "Menu",
+        "select_button" to "SELECT",
+        "start_button" to "START",
+        "b_button" to "B",
+        "a_button" to "A",
+        "ab_button" to "A+B",
+        "turbo_button" to "Turbo",
+        "quicksave_button" to "Save",
+        "quickload_button" to "Load",
+        "fps_badge" to "FPS"
+    )
+
+    val currentSelectedState = controls[selectedControlId] ?: ControlElementState()
+
+    Box(
         modifier = modifier
-            .fillMaxWidth()
-            .alpha(opacity.coerceIn(0.2f, 1.0f)),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxSize()
+            .alpha(opacity.coerceIn(0.2f, 1.0f))
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
+        // Painel flutuante de edição no topo/centro
         if (isEditMode) {
-            LayoutEditToolbar(
+            LayoutEditOverlayCard(
+                selectedControlId = selectedControlId,
+                selectedControlLabel = labels[selectedControlId] ?: "Nenhum",
+                scale = currentSelectedState.scale,
                 isLandscape = false,
-                scale = scale,
-                onScaleChange = onScaleChange,
-                onResetLayout = onResetLayout,
-                onExitEditMode = onExitEditMode
+                onScaleChange = { newScale ->
+                    selectedControlId?.let { onControlScaleChange(it, newScale) }
+                },
+                onResetCurrentItem = {
+                    selectedControlId?.let { onResetSingleControl(it) }
+                },
+                onResetAll = onResetLayout,
+                onExitEditMode = onExitEditMode,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp)
             )
         }
 
-        Box(
+        // Faixa Superior dos Controles: L, Menu (☰), R
+        val lState = controls["l_button"] ?: ControlElementState()
+        val menuState = controls["menu_button"] ?: ControlElementState()
+        val rState = controls["r_button"] ?: ControlElementState()
+
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .align(Alignment.TopCenter)
+                .padding(top = if (isEditMode) 96.dp else 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            EditableControlBox(
+                id = "l_button",
+                label = "L",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "l_button",
+                onSelect = { selectedControlId = it },
+                state = lState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
             ) {
-                // Linha Superior: L, Quick Actions Bar, R
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                AnatomicalShoulderButton(
+                    isLeft = true,
+                    buttonMask = GbaInput.BUTTON_L,
+                    onButtonChange = onButtonChange,
+                    scale = lState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+
+            EditableControlBox(
+                id = "menu_button",
+                label = "Menu",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "menu_button",
+                onSelect = { selectedControlId = it },
+                state = menuState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                MenuHambugerButton(
+                    onClick = onMenuClick,
+                    scale = menuState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+
+            EditableControlBox(
+                id = "r_button",
+                label = "R",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "r_button",
+                onSelect = { selectedControlId = it },
+                state = rState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                AnatomicalShoulderButton(
+                    isLeft = false,
+                    buttonMask = GbaInput.BUTTON_R,
+                    onButtonChange = onButtonChange,
+                    scale = rState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        // D-Pad à esquerda
+        val dpadState = controls["dpad"] ?: ControlElementState()
+        EditableControlBox(
+            id = "dpad",
+            label = "D-Pad",
+            isEditMode = isEditMode,
+            isSelected = selectedControlId == "dpad",
+            onSelect = { selectedControlId = it },
+            state = dpadState,
+            onOffsetChange = onControlOffsetChange,
+            onScaleChange = onControlScaleChange,
+            modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 12.dp)
+        ) {
+            ContinuousDPad(
+                onButtonChange = onButtonChange,
+                palette = palette,
+                size = (136.dp * dpadState.scale).coerceIn(68.dp, 240.dp),
+                isEditMode = isEditMode,
+                onPressHaptic = onHapticClick
+            )
+        }
+
+        // SELECT e START na direita (posicionados logo acima de B e A)
+        val selectState = controls["select_button"] ?: ControlElementState()
+        val startState = controls["start_button"] ?: ControlElementState()
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 76.dp, end = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EditableControlBox(
+                id = "select_button",
+                label = "SELECT",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "select_button",
+                onSelect = { selectedControlId = it },
+                state = selectState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                SystemPillButton(
+                    text = "SELECT",
+                    buttonMask = GbaInput.BUTTON_SELECT,
+                    onButtonChange = onButtonChange,
+                    scale = selectState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+
+            EditableControlBox(
+                id = "start_button",
+                label = "START",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "start_button",
+                onSelect = { selectedControlId = it },
+                state = startState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                SystemPillButton(
+                    text = "START",
+                    buttonMask = GbaInput.BUTTON_START,
+                    onButtonChange = onButtonChange,
+                    scale = startState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        // Botões B e A alinhados lado a lado na base direita
+        val bState = controls["b_button"] ?: ControlElementState()
+        val aState = controls["a_button"] ?: ControlElementState()
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 12.dp, end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EditableControlBox(
+                id = "b_button",
+                label = "B",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "b_button",
+                onSelect = { selectedControlId = it },
+                state = bState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                ActionCircleButton(
+                    text = "B",
+                    buttonMask = GbaInput.BUTTON_B,
+                    onButtonChange = onButtonChange,
+                    size = (54.dp * bState.scale).coerceIn(28.dp, 96.dp),
+                    containerColor = palette.buttonBBackground,
+                    pressedColor = palette.buttonPressedHighlight,
+                    borderColor = palette.buttonBorderColor,
+                    textColor = palette.textColor,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+
+            EditableControlBox(
+                id = "a_button",
+                label = "A",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "a_button",
+                onSelect = { selectedControlId = it },
+                state = aState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                ActionCircleButton(
+                    text = "A",
+                    buttonMask = GbaInput.BUTTON_A,
+                    onButtonChange = onButtonChange,
+                    size = (54.dp * aState.scale).coerceIn(28.dp, 96.dp),
+                    containerColor = palette.buttonABackground,
+                    pressedColor = palette.buttonPressedHighlight,
+                    borderColor = palette.buttonBorderColor,
+                    textColor = palette.textColor,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        // Extras opcionais (somente se ativados no menu)
+        if (showAbCombo) {
+            val abState = controls["ab_button"] ?: ControlElementState()
+            EditableControlBox(
+                id = "ab_button",
+                label = "A+B",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "ab_button",
+                onSelect = { selectedControlId = it },
+                state = abState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 142.dp, end = 40.dp)
+            ) {
+                ActionCircleButton(
+                    text = "A+B",
+                    buttonMask = GbaInput.BUTTON_A or GbaInput.BUTTON_B,
+                    onButtonChange = onButtonChange,
+                    size = (40.dp * abState.scale).coerceIn(24.dp, 72.dp),
+                    containerColor = palette.buttonAbBackground,
+                    pressedColor = palette.buttonPressedHighlight,
+                    borderColor = palette.buttonBorderColor,
+                    textColor = palette.textColor,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        if (showTurboButton) {
+            val turboState = controls["turbo_button"] ?: ControlElementState()
+            EditableControlBox(
+                id = "turbo_button",
+                label = "Turbo",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "turbo_button",
+                onSelect = { selectedControlId = it },
+                state = turboState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        hapticManager.performTurboToggle(hapticFeedbackEnabled)
+                        onTurboToggle()
+                    },
+                    modifier = Modifier
+                        .size((36.dp * turboState.scale).coerceIn(24.dp, 64.dp))
+                        .background(if (isTurboActive) GbaSecondary else palette.systemBackground, CircleShape)
+                        .border(1.5.dp, palette.buttonBorderColor, CircleShape)
                 ) {
-                    DraggableControlBox(
-                        id = "l_button",
-                        isLandscape = false,
-                        isEditMode = isEditMode,
-                        offsetMap = offsets,
-                        onOffsetChange = onOffsetChange,
-                        scale = scale,
-                        label = "L"
-                    ) {
-                        ShoulderButton(
-                            text = "L",
-                            buttonMask = GbaInput.BUTTON_L,
-                            onButtonChange = onButtonChange,
-                            containerColor = palette.shoulderBackground,
-                            pressedColor = palette.buttonPressedHighlight,
-                            borderColor = palette.buttonBorderColor,
-                            textColor = palette.textColor,
-                            isEditMode = isEditMode,
-                            onPressHaptic = onHapticClick
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.FastForward,
+                        contentDescription = "Turbo",
+                        tint = if (isTurboActive) Color.Black else palette.textColor,
+                        modifier = Modifier.size(20.dp * turboState.scale.coerceIn(0.7f, 1.3f))
+                    )
+                }
+            }
+        }
 
-                    DraggableControlBox(
-                        id = "quick_actions",
-                        isLandscape = false,
-                        isEditMode = isEditMode,
-                        offsetMap = offsets,
-                        onOffsetChange = onOffsetChange,
-                        scale = scale,
-                        label = "AÇÕES"
-                    ) {
-                        QuickActionsBar(
-                            showQuickSaveLoad = showQuickSaveLoad,
-                            isTurboActive = isTurboActive,
-                            onTurboToggle = {
-                                hapticManager.performTurboToggle(hapticFeedbackEnabled)
-                                onTurboToggle()
-                            },
-                            onMenuClick = onMenuClick,
-                            onQuickSave = onQuickSave,
-                            onQuickLoad = onQuickLoad,
-                            onPressHaptic = onHapticClick
-                        )
-                    }
+        if (showQuickSaveLoad) {
+            val qsState = controls["quicksave_button"] ?: ControlElementState()
+            val qlState = controls["quickload_button"] ?: ControlElementState()
 
-                    DraggableControlBox(
-                        id = "r_button",
-                        isLandscape = false,
-                        isEditMode = isEditMode,
-                        offsetMap = offsets,
-                        onOffsetChange = onOffsetChange,
-                        scale = scale,
-                        label = "R"
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                EditableControlBox(
+                    id = "quicksave_button",
+                    label = "Save",
+                    isEditMode = isEditMode,
+                    isSelected = selectedControlId == "quicksave_button",
+                    onSelect = { selectedControlId = it },
+                    state = qsState,
+                    onOffsetChange = onControlOffsetChange,
+                    onScaleChange = onControlScaleChange
+                ) {
+                    IconButton(
+                        onClick = {
+                            onHapticClick()
+                            onQuickSave()
+                        },
+                        modifier = Modifier
+                            .size((34.dp * qsState.scale).coerceIn(24.dp, 64.dp))
+                            .background(palette.systemBackground, CircleShape)
+                            .border(1.5.dp, palette.buttonBorderColor, CircleShape)
                     ) {
-                        ShoulderButton(
-                            text = "R",
-                            buttonMask = GbaInput.BUTTON_R,
-                            onButtonChange = onButtonChange,
-                            containerColor = palette.shoulderBackground,
-                            pressedColor = palette.buttonPressedHighlight,
-                            borderColor = palette.buttonBorderColor,
-                            textColor = palette.textColor,
-                            isEditMode = isEditMode,
-                            onPressHaptic = onHapticClick
-                        )
+                        Icon(Icons.Default.Save, contentDescription = "Quick Save", tint = palette.textColor, modifier = Modifier.size(17.dp * qsState.scale))
                     }
                 }
 
-                // Linha Inferior: D-Pad, SELECT/START, Action Cluster (B/A/A+B)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                EditableControlBox(
+                    id = "quickload_button",
+                    label = "Load",
+                    isEditMode = isEditMode,
+                    isSelected = selectedControlId == "quickload_button",
+                    onSelect = { selectedControlId = it },
+                    state = qlState,
+                    onOffsetChange = onControlOffsetChange,
+                    onScaleChange = onControlScaleChange
                 ) {
-                    DraggableControlBox(
-                        id = "dpad",
-                        isLandscape = false,
-                        isEditMode = isEditMode,
-                        offsetMap = offsets,
-                        onOffsetChange = onOffsetChange,
-                        scale = scale,
-                        label = "D-PAD"
+                    IconButton(
+                        onClick = {
+                            onHapticClick()
+                            onQuickLoad()
+                        },
+                        modifier = Modifier
+                            .size((34.dp * qlState.scale).coerceIn(24.dp, 64.dp))
+                            .background(palette.systemBackground, CircleShape)
+                            .border(1.5.dp, palette.buttonBorderColor, CircleShape)
                     ) {
-                        ContinuousDPad(
-                            onButtonChange = onButtonChange,
-                            palette = palette,
-                            isEditMode = isEditMode,
-                            onPressHaptic = onHapticClick
-                        )
+                        Icon(Icons.Default.Restore, contentDescription = "Quick Load", tint = palette.textColor, modifier = Modifier.size(17.dp * qlState.scale))
                     }
+                }
+            }
+        }
 
-                    DraggableControlBox(
-                        id = "system_bar",
-                        isLandscape = false,
-                        isEditMode = isEditMode,
-                        offsetMap = offsets,
-                        onOffsetChange = onOffsetChange,
-                        scale = scale,
-                        label = "SYSTEM",
-                        modifier = Modifier.padding(top = 28.dp)
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            SystemButton(
-                                text = "SELECT",
-                                buttonMask = GbaInput.BUTTON_SELECT,
-                                onButtonChange = onButtonChange,
-                                containerColor = palette.systemBackground,
-                                pressedColor = palette.buttonPressedHighlight,
-                                borderColor = palette.buttonBorderColor,
-                                textColor = palette.textColor,
-                                isEditMode = isEditMode,
-                                onPressHaptic = onHapticClick
-                            )
-                            SystemButton(
-                                text = "START",
-                                buttonMask = GbaInput.BUTTON_START,
-                                onButtonChange = onButtonChange,
-                                containerColor = palette.systemBackground,
-                                pressedColor = palette.buttonPressedHighlight,
-                                borderColor = palette.buttonBorderColor,
-                                textColor = palette.textColor,
-                                isEditMode = isEditMode,
-                                onPressHaptic = onHapticClick
-                            )
-                        }
-                    }
-
-                    DraggableControlBox(
-                        id = "ab_cluster",
-                        isLandscape = false,
-                        isEditMode = isEditMode,
-                        offsetMap = offsets,
-                        onOffsetChange = onOffsetChange,
-                        scale = scale,
-                        label = "A / B"
-                    ) {
-                        ActionButtonsCluster(
-                            onButtonChange = onButtonChange,
-                            palette = palette,
-                            showAbCombo = showAbCombo,
-                            isEditMode = isEditMode,
-                            onPressHaptic = onHapticClick
-                        )
-                    }
+        if (showFpsCounter && currentFps != null) {
+            val fpsState = controls["fps_badge"] ?: ControlElementState()
+            EditableControlBox(
+                id = "fps_badge",
+                label = "FPS",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "fps_badge",
+                onSelect = { selectedControlId = it },
+                state = fpsState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange,
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 58.dp)
+            ) {
+                Surface(
+                    color = Color(0x991B192A),
+                    shape = RoundedCornerShape(4.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, palette.buttonBorderColor.copy(alpha = 0.4f))
+                ) {
+                    Text(
+                        text = "$currentFps FPS",
+                        color = if (currentFps >= 50) Color(0xFF81C784) else Color(0xFFFFB74D),
+                        fontSize = (10f * fpsState.scale.coerceIn(0.7f, 1.4f)).sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
                 }
             }
         }
@@ -1071,7 +1331,13 @@ fun PortraitVirtualController(
 }
 
 /**
- * Controlador Virtual em Modo Paisagem (Horizontal).
+ * Controlador Virtual em Modo Paisagem (Deitado):
+ * Fiel à referência clássica do My Boy!:
+ * - L no topo esquerdo, R no topo direito
+ * - Menu (☰) no topo centro
+ * - D-Pad no canto inferior esquerdo
+ * - B e A lado a lado no canto inferior direito
+ * - SELECT e START em pílulas alinhadas logo à esquerda de B
  */
 @Composable
 fun LandscapeVirtualController(
@@ -1080,17 +1346,20 @@ fun LandscapeVirtualController(
     onTurboToggle: () -> Unit,
     modifier: Modifier = Modifier,
     opacity: Float = 0.85f,
-    scale: Float = 1.0f,
-    theme: String = UserPreferences.THEME_CLEAN_MYBOY,
-    showQuickSaveLoad: Boolean = true,
-    showAbCombo: Boolean = true,
-    isTurboActive: Boolean = false,
-    isEditMode: Boolean = false,
-    offsets: Map<String, Pair<Float, Float>> = emptyMap(),
-    onOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit = { _, _, _ -> },
+    theme: String = UserPreferences.THEME_FOLLOW_APP,
+    controls: Map<String, ControlElementState> = emptyMap(),
+    onControlOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit = { _, _, _ -> },
+    onControlScaleChange: (id: String, scale: Float) -> Unit = { _, _ -> },
+    onResetSingleControl: (id: String) -> Unit = {},
     onResetLayout: () -> Unit = {},
     onExitEditMode: () -> Unit = {},
-    onScaleChange: (Float) -> Unit = {},
+    showAbCombo: Boolean = false,
+    showQuickSaveLoad: Boolean = false,
+    showTurboButton: Boolean = false,
+    showFpsCounter: Boolean = false,
+    currentFps: Int? = null,
+    isTurboActive: Boolean = false,
+    isEditMode: Boolean = false,
     onQuickSave: () -> Unit = {},
     onQuickLoad: () -> Unit = {},
     hapticFeedbackEnabled: Boolean = true
@@ -1100,7 +1369,28 @@ fun LandscapeVirtualController(
     val onHapticClick = remember(hapticFeedbackEnabled) {
         { hapticManager.performButtonClick(hapticFeedbackEnabled) }
     }
-    val palette = remember(theme) { getControllerPalette(theme) }
+    val currentAppTheme = LocalAppThemeColors.current.id
+    val palette = remember(theme, currentAppTheme) { getControllerPalette(theme, currentAppTheme) }
+
+    var selectedControlId by remember { mutableStateOf<String?>(null) }
+
+    val labels = mapOf(
+        "dpad" to "D-Pad",
+        "l_button" to "L",
+        "r_button" to "R",
+        "menu_button" to "Menu",
+        "select_button" to "SELECT",
+        "start_button" to "START",
+        "b_button" to "B",
+        "a_button" to "A",
+        "ab_button" to "A+B",
+        "turbo_button" to "Turbo",
+        "quicksave_button" to "Save",
+        "quickload_button" to "Load",
+        "fps_badge" to "FPS"
+    )
+
+    val currentSelectedState = controls[selectedControlId] ?: ControlElementState()
 
     Box(
         modifier = modifier
@@ -1108,188 +1398,385 @@ fun LandscapeVirtualController(
             .alpha(opacity.coerceIn(0.2f, 1.0f))
             .padding(10.dp)
     ) {
+        // Painel flutuante de edição no centro da tela
         if (isEditMode) {
-            LayoutEditToolbar(
+            LayoutEditOverlayCard(
+                selectedControlId = selectedControlId,
+                selectedControlLabel = labels[selectedControlId] ?: "Nenhum",
+                scale = currentSelectedState.scale,
                 isLandscape = true,
-                scale = scale,
-                onScaleChange = onScaleChange,
-                onResetLayout = onResetLayout,
+                onScaleChange = { newScale ->
+                    selectedControlId?.let { onControlScaleChange(it, newScale) }
+                },
+                onResetCurrentItem = {
+                    selectedControlId?.let { onResetSingleControl(it) }
+                },
+                onResetAll = onResetLayout,
                 onExitEditMode = onExitEditMode,
-                modifier = Modifier.align(Alignment.TopCenter)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 44.dp)
             )
         }
 
-        // Canto Superior Centro/Direito: Barra de Ações Rápidas & Sistema
+        // Topo Esquerdo: Gatilho L
+        val lState = controls["l_button"] ?: ControlElementState()
+        EditableControlBox(
+            id = "l_button",
+            label = "L",
+            isEditMode = isEditMode,
+            isSelected = selectedControlId == "l_button",
+            onSelect = { selectedControlId = it },
+            state = lState,
+            onOffsetChange = onControlOffsetChange,
+            onScaleChange = onControlScaleChange,
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            AnatomicalShoulderButton(
+                isLeft = true,
+                buttonMask = GbaInput.BUTTON_L,
+                onButtonChange = onButtonChange,
+                scale = lState.scale,
+                palette = palette,
+                isEditMode = isEditMode,
+                onPressHaptic = onHapticClick
+            )
+        }
+
+        // Topo Centro: Botão de Menu (☰)
+        val menuState = controls["menu_button"] ?: ControlElementState()
+        EditableControlBox(
+            id = "menu_button",
+            label = "Menu",
+            isEditMode = isEditMode,
+            isSelected = selectedControlId == "menu_button",
+            onSelect = { selectedControlId = it },
+            state = menuState,
+            onOffsetChange = onControlOffsetChange,
+            onScaleChange = onControlScaleChange,
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            MenuHambugerButton(
+                onClick = onMenuClick,
+                scale = menuState.scale,
+                palette = palette,
+                isEditMode = isEditMode,
+                onPressHaptic = onHapticClick
+            )
+        }
+
+        // Topo Direito: Gatilho R
+        val rState = controls["r_button"] ?: ControlElementState()
+        EditableControlBox(
+            id = "r_button",
+            label = "R",
+            isEditMode = isEditMode,
+            isSelected = selectedControlId == "r_button",
+            onSelect = { selectedControlId = it },
+            state = rState,
+            onOffsetChange = onControlOffsetChange,
+            onScaleChange = onControlScaleChange,
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
+            AnatomicalShoulderButton(
+                isLeft = false,
+                buttonMask = GbaInput.BUTTON_R,
+                onButtonChange = onButtonChange,
+                scale = rState.scale,
+                palette = palette,
+                isEditMode = isEditMode,
+                onPressHaptic = onHapticClick
+            )
+        }
+
+        // Canto Inferior Esquerdo: D-Pad
+        val dpadState = controls["dpad"] ?: ControlElementState()
+        EditableControlBox(
+            id = "dpad",
+            label = "D-Pad",
+            isEditMode = isEditMode,
+            isSelected = selectedControlId == "dpad",
+            onSelect = { selectedControlId = it },
+            state = dpadState,
+            onOffsetChange = onControlOffsetChange,
+            onScaleChange = onControlScaleChange,
+            modifier = Modifier.align(Alignment.BottomStart)
+        ) {
+            ContinuousDPad(
+                onButtonChange = onButtonChange,
+                palette = palette,
+                size = (136.dp * dpadState.scale).coerceIn(68.dp, 240.dp),
+                isEditMode = isEditMode,
+                onPressHaptic = onHapticClick
+            )
+        }
+
+        // Base Direita: SELECT e START alinhados logo à esquerda de B e A
+        val selectState = controls["select_button"] ?: ControlElementState()
+        val startState = controls["start_button"] ?: ControlElementState()
+
         Row(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .then(if (isEditMode) Modifier.padding(top = 68.dp) else Modifier),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 6.dp, end = 138.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DraggableControlBox(
-                id = "quick_actions",
-                isLandscape = true,
+            EditableControlBox(
+                id = "select_button",
+                label = "SELECT",
                 isEditMode = isEditMode,
-                offsetMap = offsets,
-                onOffsetChange = onOffsetChange,
-                scale = scale,
-                label = "AÇÕES"
+                isSelected = selectedControlId == "select_button",
+                onSelect = { selectedControlId = it },
+                state = selectState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
             ) {
-                QuickActionsBar(
-                    showQuickSaveLoad = showQuickSaveLoad,
-                    isTurboActive = isTurboActive,
-                    onTurboToggle = {
-                        hapticManager.performTurboToggle(hapticFeedbackEnabled)
-                        onTurboToggle()
-                    },
-                    onMenuClick = onMenuClick,
-                    onQuickSave = onQuickSave,
-                    onQuickLoad = onQuickLoad,
+                SystemPillButton(
+                    text = "SELECT",
+                    buttonMask = GbaInput.BUTTON_SELECT,
+                    onButtonChange = onButtonChange,
+                    scale = selectState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
                     onPressHaptic = onHapticClick
                 )
             }
 
-            DraggableControlBox(
-                id = "system_bar",
-                isLandscape = true,
+            EditableControlBox(
+                id = "start_button",
+                label = "START",
                 isEditMode = isEditMode,
-                offsetMap = offsets,
-                onOffsetChange = onOffsetChange,
-                scale = scale,
-                label = "SYSTEM"
+                isSelected = selectedControlId == "start_button",
+                onSelect = { selectedControlId = it },
+                state = startState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
             ) {
-                Row(
+                SystemPillButton(
+                    text = "START",
+                    buttonMask = GbaInput.BUTTON_START,
+                    onButtonChange = onButtonChange,
+                    scale = startState.scale,
+                    palette = palette,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        // Canto Inferior Direito: Botões B e A lado a lado na horizontal
+        val bState = controls["b_button"] ?: ControlElementState()
+        val aState = controls["a_button"] ?: ControlElementState()
+
+        Row(
+            modifier = Modifier.align(Alignment.BottomEnd),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EditableControlBox(
+                id = "b_button",
+                label = "B",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "b_button",
+                onSelect = { selectedControlId = it },
+                state = bState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                ActionCircleButton(
+                    text = "B",
+                    buttonMask = GbaInput.BUTTON_B,
+                    onButtonChange = onButtonChange,
+                    size = (54.dp * bState.scale).coerceIn(28.dp, 96.dp),
+                    containerColor = palette.buttonBBackground,
+                    pressedColor = palette.buttonPressedHighlight,
+                    borderColor = palette.buttonBorderColor,
+                    textColor = palette.textColor,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+
+            EditableControlBox(
+                id = "a_button",
+                label = "A",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "a_button",
+                onSelect = { selectedControlId = it },
+                state = aState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange
+            ) {
+                ActionCircleButton(
+                    text = "A",
+                    buttonMask = GbaInput.BUTTON_A,
+                    onButtonChange = onButtonChange,
+                    size = (54.dp * aState.scale).coerceIn(28.dp, 96.dp),
+                    containerColor = palette.buttonABackground,
+                    pressedColor = palette.buttonPressedHighlight,
+                    borderColor = palette.buttonBorderColor,
+                    textColor = palette.textColor,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        // Extras opcionais em modo paisagem (se ativados no menu)
+        if (showAbCombo) {
+            val abState = controls["ab_button"] ?: ControlElementState()
+            EditableControlBox(
+                id = "ab_button",
+                label = "A+B",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "ab_button",
+                onSelect = { selectedControlId = it },
+                state = abState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 68.dp, end = 34.dp)
+            ) {
+                ActionCircleButton(
+                    text = "A+B",
+                    buttonMask = GbaInput.BUTTON_A or GbaInput.BUTTON_B,
+                    onButtonChange = onButtonChange,
+                    size = (40.dp * abState.scale).coerceIn(24.dp, 72.dp),
+                    containerColor = palette.buttonAbBackground,
+                    pressedColor = palette.buttonPressedHighlight,
+                    borderColor = palette.buttonBorderColor,
+                    textColor = palette.textColor,
+                    isEditMode = isEditMode,
+                    onPressHaptic = onHapticClick
+                )
+            }
+        }
+
+        if (showTurboButton) {
+            val turboState = controls["turbo_button"] ?: ControlElementState()
+            EditableControlBox(
+                id = "turbo_button",
+                label = "Turbo",
+                isEditMode = isEditMode,
+                isSelected = selectedControlId == "turbo_button",
+                onSelect = { selectedControlId = it },
+                state = turboState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        hapticManager.performTurboToggle(hapticFeedbackEnabled)
+                        onTurboToggle()
+                    },
                     modifier = Modifier
-                        .background(Color(0x6014141C), CircleShape)
-                        .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .size((36.dp * turboState.scale).coerceIn(24.dp, 64.dp))
+                        .background(if (isTurboActive) GbaSecondary else palette.systemBackground, CircleShape)
+                        .border(1.5.dp, palette.buttonBorderColor, CircleShape)
                 ) {
-                    SystemButton(
-                        text = "SELECT",
-                        buttonMask = GbaInput.BUTTON_SELECT,
-                        onButtonChange = onButtonChange,
-                        containerColor = palette.systemBackground,
-                        pressedColor = palette.buttonPressedHighlight,
-                        borderColor = palette.buttonBorderColor,
-                        textColor = palette.textColor,
-                        isEditMode = isEditMode,
-                        onPressHaptic = onHapticClick
-                    )
-                    SystemButton(
-                        text = "START",
-                        buttonMask = GbaInput.BUTTON_START,
-                        onButtonChange = onButtonChange,
-                        containerColor = palette.systemBackground,
-                        pressedColor = palette.buttonPressedHighlight,
-                        borderColor = palette.buttonBorderColor,
-                        textColor = palette.textColor,
-                        isEditMode = isEditMode,
-                        onPressHaptic = onHapticClick
+                    Icon(
+                        imageVector = Icons.Default.FastForward,
+                        contentDescription = "Turbo",
+                        tint = if (isTurboActive) Color.Black else palette.textColor,
+                        modifier = Modifier.size(20.dp * turboState.scale.coerceIn(0.7f, 1.3f))
                     )
                 }
             }
         }
 
-        // Lado Esquerdo: L Shoulder e D-Pad
-        Column(
-            modifier = Modifier.align(Alignment.BottomStart),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
-            DraggableControlBox(
-                id = "l_button",
-                isLandscape = true,
-                isEditMode = isEditMode,
-                offsetMap = offsets,
-                onOffsetChange = onOffsetChange,
-                scale = scale,
-                label = "L"
-            ) {
-                ShoulderButton(
-                    text = "L",
-                    buttonMask = GbaInput.BUTTON_L,
-                    onButtonChange = onButtonChange,
-                    containerColor = palette.shoulderBackground,
-                    pressedColor = palette.buttonPressedHighlight,
-                    borderColor = palette.buttonBorderColor,
-                    textColor = palette.textColor,
-                    isEditMode = isEditMode,
-                    onPressHaptic = onHapticClick
-                )
-            }
+        if (showQuickSaveLoad) {
+            val qsState = controls["quicksave_button"] ?: ControlElementState()
+            val qlState = controls["quickload_button"] ?: ControlElementState()
 
-            DraggableControlBox(
-                id = "dpad",
-                isLandscape = true,
-                isEditMode = isEditMode,
-                offsetMap = offsets,
-                onOffsetChange = onOffsetChange,
-                scale = scale,
-                label = "D-PAD"
+            Row(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 46.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ContinuousDPad(
-                    onButtonChange = onButtonChange,
-                    palette = palette,
+                EditableControlBox(
+                    id = "quicksave_button",
+                    label = "Save",
                     isEditMode = isEditMode,
-                    onPressHaptic = onHapticClick
-                )
+                    isSelected = selectedControlId == "quicksave_button",
+                    onSelect = { selectedControlId = it },
+                    state = qsState,
+                    onOffsetChange = onControlOffsetChange,
+                    onScaleChange = onControlScaleChange
+                ) {
+                    IconButton(
+                        onClick = {
+                            onHapticClick()
+                            onQuickSave()
+                        },
+                        modifier = Modifier
+                            .size((34.dp * qsState.scale).coerceIn(24.dp, 64.dp))
+                            .background(palette.systemBackground, CircleShape)
+                            .border(1.5.dp, palette.buttonBorderColor, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = "Quick Save", tint = palette.textColor, modifier = Modifier.size(17.dp * qsState.scale))
+                    }
+                }
+
+                EditableControlBox(
+                    id = "quickload_button",
+                    label = "Load",
+                    isEditMode = isEditMode,
+                    isSelected = selectedControlId == "quickload_button",
+                    onSelect = { selectedControlId = it },
+                    state = qlState,
+                    onOffsetChange = onControlOffsetChange,
+                    onScaleChange = onControlScaleChange
+                ) {
+                    IconButton(
+                        onClick = {
+                            onHapticClick()
+                            onQuickLoad()
+                        },
+                        modifier = Modifier
+                            .size((34.dp * qlState.scale).coerceIn(24.dp, 64.dp))
+                            .background(palette.systemBackground, CircleShape)
+                            .border(1.5.dp, palette.buttonBorderColor, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = "Quick Load", tint = palette.textColor, modifier = Modifier.size(17.dp * qlState.scale))
+                    }
+                }
             }
         }
 
-        // Lado Direito: R Shoulder e Action Cluster (B/A/A+B)
-        Column(
-            modifier = Modifier.align(Alignment.BottomEnd),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.End
-        ) {
-            DraggableControlBox(
-                id = "r_button",
-                isLandscape = true,
+        if (showFpsCounter && currentFps != null) {
+            val fpsState = controls["fps_badge"] ?: ControlElementState()
+            EditableControlBox(
+                id = "fps_badge",
+                label = "FPS",
                 isEditMode = isEditMode,
-                offsetMap = offsets,
-                onOffsetChange = onOffsetChange,
-                scale = scale,
-                label = "R"
+                isSelected = selectedControlId == "fps_badge",
+                onSelect = { selectedControlId = it },
+                state = fpsState,
+                onOffsetChange = onControlOffsetChange,
+                onScaleChange = onControlScaleChange,
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 88.dp, top = 6.dp)
             ) {
-                ShoulderButton(
-                    text = "R",
-                    buttonMask = GbaInput.BUTTON_R,
-                    onButtonChange = onButtonChange,
-                    containerColor = palette.shoulderBackground,
-                    pressedColor = palette.buttonPressedHighlight,
-                    borderColor = palette.buttonBorderColor,
-                    textColor = palette.textColor,
-                    isEditMode = isEditMode,
-                    onPressHaptic = onHapticClick
-                )
-            }
-
-            DraggableControlBox(
-                id = "ab_cluster",
-                isLandscape = true,
-                isEditMode = isEditMode,
-                offsetMap = offsets,
-                onOffsetChange = onOffsetChange,
-                scale = scale,
-                label = "A / B"
-            ) {
-                ActionButtonsCluster(
-                    onButtonChange = onButtonChange,
-                    palette = palette,
-                    showAbCombo = showAbCombo,
-                    isEditMode = isEditMode,
-                    onPressHaptic = onHapticClick
-                )
+                Surface(
+                    color = Color(0x991B192A),
+                    shape = RoundedCornerShape(4.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, palette.buttonBorderColor.copy(alpha = 0.4f))
+                ) {
+                    Text(
+                        text = "$currentFps FPS",
+                        color = if (currentFps >= 50) Color(0xFF81C784) else Color(0xFFFFB74D),
+                        fontSize = (10f * fpsState.scale.coerceIn(0.7f, 1.4f)).sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Ponto de entrada unificado para o Controlador Virtual GBA.
+ * Ponto de entrada unificado para o Controlador Virtual GBA com suporte completo a
+ * estado independente por botão (escala e posição) e isolamento Retrato vs Paisagem.
  */
 @Composable
 fun VirtualController(
@@ -1298,17 +1785,20 @@ fun VirtualController(
     onTurboToggle: () -> Unit,
     modifier: Modifier = Modifier,
     opacity: Float = 0.85f,
-    scale: Float = 1.0f,
-    theme: String = UserPreferences.THEME_CLEAN_MYBOY,
-    showQuickSaveLoad: Boolean = true,
-    showAbCombo: Boolean = true,
-    isTurboActive: Boolean = false,
-    isEditMode: Boolean = false,
-    offsets: Map<String, Pair<Float, Float>> = emptyMap(),
-    onOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit = { _, _, _ -> },
+    theme: String = UserPreferences.THEME_FOLLOW_APP,
+    controls: Map<String, ControlElementState> = emptyMap(),
+    onControlOffsetChange: (id: String, dxDp: Float, dyDp: Float) -> Unit = { _, _, _ -> },
+    onControlScaleChange: (id: String, scale: Float) -> Unit = { _, _ -> },
+    onResetSingleControl: (id: String) -> Unit = {},
     onResetLayout: () -> Unit = {},
     onExitEditMode: () -> Unit = {},
-    onScaleChange: (Float) -> Unit = {},
+    showAbCombo: Boolean = false,
+    showQuickSaveLoad: Boolean = false,
+    showTurboButton: Boolean = false,
+    showFpsCounter: Boolean = false,
+    currentFps: Int? = null,
+    isTurboActive: Boolean = false,
+    isEditMode: Boolean = false,
     onQuickSave: () -> Unit = {},
     onQuickLoad: () -> Unit = {},
     hapticFeedbackEnabled: Boolean = true,
@@ -1321,17 +1811,20 @@ fun VirtualController(
             onTurboToggle = onTurboToggle,
             modifier = modifier,
             opacity = opacity,
-            scale = scale,
             theme = theme,
-            showQuickSaveLoad = showQuickSaveLoad,
-            showAbCombo = showAbCombo,
-            isTurboActive = isTurboActive,
-            isEditMode = isEditMode,
-            offsets = offsets,
-            onOffsetChange = onOffsetChange,
+            controls = controls,
+            onControlOffsetChange = onControlOffsetChange,
+            onControlScaleChange = onControlScaleChange,
+            onResetSingleControl = onResetSingleControl,
             onResetLayout = onResetLayout,
             onExitEditMode = onExitEditMode,
-            onScaleChange = onScaleChange,
+            showAbCombo = showAbCombo,
+            showQuickSaveLoad = showQuickSaveLoad,
+            showTurboButton = showTurboButton,
+            showFpsCounter = showFpsCounter,
+            currentFps = currentFps,
+            isTurboActive = isTurboActive,
+            isEditMode = isEditMode,
             onQuickSave = onQuickSave,
             onQuickLoad = onQuickLoad,
             hapticFeedbackEnabled = hapticFeedbackEnabled
@@ -1343,17 +1836,20 @@ fun VirtualController(
             onTurboToggle = onTurboToggle,
             modifier = modifier,
             opacity = opacity,
-            scale = scale,
             theme = theme,
-            showQuickSaveLoad = showQuickSaveLoad,
-            showAbCombo = showAbCombo,
-            isTurboActive = isTurboActive,
-            isEditMode = isEditMode,
-            offsets = offsets,
-            onOffsetChange = onOffsetChange,
+            controls = controls,
+            onControlOffsetChange = onControlOffsetChange,
+            onControlScaleChange = onControlScaleChange,
+            onResetSingleControl = onResetSingleControl,
             onResetLayout = onResetLayout,
             onExitEditMode = onExitEditMode,
-            onScaleChange = onScaleChange,
+            showAbCombo = showAbCombo,
+            showQuickSaveLoad = showQuickSaveLoad,
+            showTurboButton = showTurboButton,
+            showFpsCounter = showFpsCounter,
+            currentFps = currentFps,
+            isTurboActive = isTurboActive,
+            isEditMode = isEditMode,
             onQuickSave = onQuickSave,
             onQuickLoad = onQuickLoad,
             hapticFeedbackEnabled = hapticFeedbackEnabled
@@ -1362,61 +1858,107 @@ fun VirtualController(
 }
 
 // ==========================================
-// PREVIEWS JETPACK COMPOSE
+// PREVIEWS JETPACK COMPOSE (THEMES & CONTROLS)
 // ==========================================
 
-@Preview(name = "Retrato - Clean My Boy", widthDp = 390, heightDp = 320)
+@Preview(name = "Retrato - GBA Índigo Clássico", widthDp = 390, heightDp = 360)
 @Composable
-fun VirtualControllerPortraitCleanPreview() {
-    Surface(color = GbaBackground) {
-        VirtualController(
-            onButtonChange = { _, _ -> },
-            onMenuClick = {},
-            onTurboToggle = {},
-            theme = UserPreferences.THEME_CLEAN_MYBOY,
-            isLandscape = false
-        )
+fun VirtualControllerPortraitIndigoPreview() {
+    RetroGBATheme(appTheme = UserPreferences.APP_THEME_GBA_INDIGO) {
+        Surface(color = LocalAppThemeColors.current.background) {
+            VirtualController(
+                onButtonChange = { _, _ -> },
+                onMenuClick = {},
+                onTurboToggle = {},
+                currentFps = 60,
+                theme = UserPreferences.THEME_GBA_INDIGO,
+                isLandscape = false
+            )
+        }
     }
 }
 
-@Preview(name = "Paisagem - Clean My Boy", widthDp = 780, heightDp = 360)
+@Preview(name = "Retrato - Glacier Translúcido", widthDp = 390, heightDp = 360)
 @Composable
-fun VirtualControllerLandscapeCleanPreview() {
-    Surface(color = GbaBackground) {
-        VirtualController(
-            onButtonChange = { _, _ -> },
-            onMenuClick = {},
-            onTurboToggle = {},
-            theme = UserPreferences.THEME_CLEAN_MYBOY,
-            isLandscape = true
-        )
+fun VirtualControllerPortraitGlacierPreview() {
+    RetroGBATheme(appTheme = UserPreferences.APP_THEME_GLACIER) {
+        Surface(color = LocalAppThemeColors.current.background) {
+            VirtualController(
+                onButtonChange = { _, _ -> },
+                onMenuClick = {},
+                onTurboToggle = {},
+                currentFps = 60,
+                theme = UserPreferences.THEME_GLACIER,
+                isLandscape = false
+            )
+        }
     }
 }
 
-@Preview(name = "Retrato - Retrô GBA", widthDp = 390, heightDp = 320)
+@Preview(name = "Retrato - SP Platinum", widthDp = 390, heightDp = 360)
 @Composable
-fun VirtualControllerPortraitRetroPreview() {
-    Surface(color = GbaBackground) {
-        VirtualController(
-            onButtonChange = { _, _ -> },
-            onMenuClick = {},
-            onTurboToggle = {},
-            theme = UserPreferences.THEME_RETRO_GBA,
-            isLandscape = false
-        )
+fun VirtualControllerPortraitPlatinumPreview() {
+    RetroGBATheme(appTheme = UserPreferences.APP_THEME_SP_PLATINUM) {
+        Surface(color = LocalAppThemeColors.current.background) {
+            VirtualController(
+                onButtonChange = { _, _ -> },
+                onMenuClick = {},
+                onTurboToggle = {},
+                currentFps = 60,
+                theme = UserPreferences.THEME_SP_PLATINUM,
+                isLandscape = false
+            )
+        }
     }
 }
 
-@Preview(name = "Modo Edição de Layout", widthDp = 390, heightDp = 360)
+@Preview(name = "Retrato - Famicom 20th", widthDp = 390, heightDp = 360)
+@Composable
+fun VirtualControllerPortraitFamicomPreview() {
+    RetroGBATheme(appTheme = UserPreferences.APP_THEME_FAMICOM) {
+        Surface(color = LocalAppThemeColors.current.background) {
+            VirtualController(
+                onButtonChange = { _, _ -> },
+                onMenuClick = {},
+                onTurboToggle = {},
+                currentFps = 60,
+                theme = UserPreferences.THEME_FAMICOM,
+                isLandscape = false
+            )
+        }
+    }
+}
+
+@Preview(name = "Paisagem - OLED Stealth", widthDp = 780, heightDp = 360)
+@Composable
+fun VirtualControllerLandscapeStealthPreview() {
+    RetroGBATheme(appTheme = UserPreferences.APP_THEME_OLED_STEALTH) {
+        Surface(color = LocalAppThemeColors.current.background) {
+            VirtualController(
+                onButtonChange = { _, _ -> },
+                onMenuClick = {},
+                onTurboToggle = {},
+                currentFps = 60,
+                theme = UserPreferences.THEME_OLED_STEALTH,
+                isLandscape = true
+            )
+        }
+    }
+}
+
+@Preview(name = "Modo Edição de Layout", widthDp = 390, heightDp = 380)
 @Composable
 fun VirtualControllerEditModePreview() {
-    Surface(color = GbaBackground) {
-        VirtualController(
-            onButtonChange = { _, _ -> },
-            onMenuClick = {},
-            onTurboToggle = {},
-            isEditMode = true,
-            isLandscape = false
-        )
+    RetroGBATheme(appTheme = UserPreferences.APP_THEME_GBA_INDIGO) {
+        Surface(color = LocalAppThemeColors.current.background) {
+            VirtualController(
+                onButtonChange = { _, _ -> },
+                onMenuClick = {},
+                onTurboToggle = {},
+                currentFps = 60,
+                isEditMode = true,
+                isLandscape = false
+            )
+        }
     }
 }

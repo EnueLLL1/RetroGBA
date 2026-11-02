@@ -10,3 +10,7 @@
 - **Economia de RAM:** `VFileMemChunk` duplica o buffer da ROM. Imediatamente após carregá-la no mGBA, libere o vetor de bytes temporário em C++ (`s_romData.clear()`; `s_romData.shrink_to_fit()`).
 - **Persistência de Saves (.sav):** Não dependa apenas de coroutines assíncronas de escopo padrão para gravação de bateria ao fechar o app. Garanta gravação atômica antes do encerramento com `withContext(NonCancellable)` ou rotina bloqueante em `onCleared()`.
 
+## 3. Feedback Visual Imediato (UI / Jetpack Compose)
+- **Visualização Imediata Obrigatória:** Sempre que qualquer alteração visual, layout ou estilo for feita no frontend (Jetpack Compose), renderize ou gere o preview imediatamente para que o usuário possa ver o resultado na hora.
+- **Compose Previews:** Garanta que componentes e telas modificados possuam anotações `@Preview` funcionais e acione a renderização de preview (`compose-preview` ou comando equivalente do Android CLI) logo após salvar as alterações, notificando o usuário com o resultado visual.
+
