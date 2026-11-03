@@ -106,6 +106,7 @@ fun EmulatorScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            viewModel.onAppPause()
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }

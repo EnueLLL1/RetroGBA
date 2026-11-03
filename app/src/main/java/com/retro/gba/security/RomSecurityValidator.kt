@@ -71,9 +71,9 @@ object RomSecurityValidator {
      */
     fun isPathConfined(baseDir: File, targetFile: File): Boolean {
         return try {
-            val canonicalBase = baseDir.canonicalPath
-            val canonicalTarget = targetFile.canonicalPath
-            canonicalTarget.startsWith(canonicalBase)
+            val base = baseDir.canonicalFile.toPath()
+            val target = targetFile.canonicalFile.toPath()
+            target.startsWith(base)
         } catch (e: Exception) {
             false
         }

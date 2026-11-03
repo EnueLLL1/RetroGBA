@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Repositório responsável pela persistência atômica e recuperação
@@ -60,11 +62,18 @@ class CheatRepository(
 
         try {
             val json = gson.toJson(cheats)
-            FileOutputStream(tempFile).use { it.write(json.toByteArray(Charsets.UTF_8)) }
-            if (targetFile.exists()) {
-                targetFile.delete()
+            FileOutputStream(tempFile).use { fos ->
+                fos.write(json.toByteArray(Charsets.UTF_8))
+                fos.flush()
+                fos.fd.sync()
             }
-            tempFile.renameTo(targetFile)
+            Files.move(
+                tempFile.toPath(),
+                targetFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+            true
         } catch (e: Exception) {
             tempFile.delete()
             false

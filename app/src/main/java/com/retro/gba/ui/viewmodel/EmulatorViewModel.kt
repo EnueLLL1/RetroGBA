@@ -111,13 +111,6 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     private val _landscapeControls = MutableStateFlow(userPrefs.getControlStates(isLandscape = true))
     val landscapeControls: StateFlow<Map<String, ControlElementState>> = _landscapeControls.asStateFlow()
 
-    val portraitOffsets: StateFlow<Map<String, Pair<Float, Float>>> get() = MutableStateFlow(
-        _portraitControls.value.mapValues { Pair(it.value.dx, it.value.dy) }
-    ).asStateFlow()
-
-    val landscapeOffsets: StateFlow<Map<String, Pair<Float, Float>>> get() = MutableStateFlow(
-        _landscapeControls.value.mapValues { Pair(it.value.dx, it.value.dy) }
-    ).asStateFlow()
 
     val engine: com.retro.gba.emulator.IGbaEngine = if (com.retro.gba.emulator.NativeGbaEngine.isNativeAvailable()) {
         com.retro.gba.emulator.NativeGbaEngine(
@@ -188,6 +181,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         gbaCore.setButtonPressed(GbaInput.ALL_RELEASED, false)
         if (gbaCore.isRunning && !gbaCore.isPaused) {
             gbaCore.pause()
+            persistBatterySave()
             _currentGame.value?.let { game ->
                 viewModelScope.launch {
                     raRepository.ping(game.id, "Pausado")

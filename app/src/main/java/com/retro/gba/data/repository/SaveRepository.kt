@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 data class SaveStateInfo(
     val slot: Int,
@@ -61,11 +63,18 @@ class SaveRepository(
         val tempFile = File(saveDirectory, "${targetFile.name}.tmp")
 
         try {
-            FileOutputStream(tempFile).use { it.write(data) }
-            if (targetFile.exists()) {
-                targetFile.delete()
+            FileOutputStream(tempFile).use { fos ->
+                fos.write(data)
+                fos.flush()
+                fos.fd.sync()
             }
-            tempFile.renameTo(targetFile)
+            Files.move(
+                tempFile.toPath(),
+                targetFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+            true
         } catch (e: Exception) {
             tempFile.delete()
             false
@@ -104,11 +113,18 @@ class SaveRepository(
         val tempFile = File(saveDirectory, "${targetFile.name}.tmp")
 
         try {
-            FileOutputStream(tempFile).use { it.write(data) }
-            if (targetFile.exists()) {
-                targetFile.delete()
+            FileOutputStream(tempFile).use { fos ->
+                fos.write(data)
+                fos.flush()
+                fos.fd.sync()
             }
-            tempFile.renameTo(targetFile)
+            Files.move(
+                tempFile.toPath(),
+                targetFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+            true
         } catch (e: Exception) {
             tempFile.delete()
             false

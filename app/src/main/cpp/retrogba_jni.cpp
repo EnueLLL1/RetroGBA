@@ -598,9 +598,12 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeAddCheat(
   }
 
   const char *descStr = nullptr;
+  bool descAllocated = false;
   if (description != nullptr) {
     descStr = env->GetStringUTFChars(description, nullptr);
-    if (descStr == nullptr) {
+    if (descStr != nullptr) {
+      descAllocated = true;
+    } else {
       descStr = "Cheat";
     }
   } else {
@@ -609,7 +612,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeAddCheat(
 
   const char *codeStr = env->GetStringUTFChars(code, nullptr);
   if (codeStr == nullptr) {
-    if (description != nullptr && descStr != nullptr && strcmp(descStr, "Cheat") != 0) {
+    if (descAllocated) {
       env->ReleaseStringUTFChars(description, descStr);
     }
     return JNI_FALSE;
@@ -678,7 +681,7 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeAddCheat(
   }
 
   env->ReleaseStringUTFChars(code, codeStr);
-  if (description != nullptr && descStr != nullptr && strcmp(descStr, "Cheat") != 0) {
+  if (descAllocated) {
     env->ReleaseStringUTFChars(description, descStr);
   }
 
