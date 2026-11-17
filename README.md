@@ -24,7 +24,8 @@ O **RetroGBA** é um emulador de alta fidelidade e código aberto de **Game Boy 
 | **7** | **Feedback Háptico & Controles Customizáveis** | ✅ Concluído | `VibrationEffect` tátil, Opacidade configurável (20%-100%), Multitouch D-Pad |
 | **8** | **Motor de Cheats GameShark & Action Replay** | ✅ Concluído | `mCheatDevice` mGBA, Cheats em C++, JSON atômico, Bloqueio rígido no Hardcore |
 | **9** | **Bateria, Gerenciamento Térmico & Profiling** | ✅ Concluído | `PowerProfileManager`, Frameskip dinâmico, 0% CPU background pause, HUD de FPS |
-| **10**| **Documentação de Release & Build Final** | ✅ Concluído | ProGuard/R8, Builds Debug e Release unsigned, Documentação técnica unificada |
+| **10**| **Documentação de Release & Build Final** | ✅ Concluído | ProGuard/R8, Builds Debug e Release, Documentação técnica unificada |
+| **11**| **Overhaul `v1.1.0` (My Boy! Controls, mGBA JNI & RA)** | ✅ Concluído | Editor estilo My Boy! Portrait/Landscape, Multi-Touch 8-way + `B↔A`, polaridade `setKeys` + `blip_buf`, RA `login2`/`Flags==3`/Rich Presence/Fila Offline |
 
 ---
 
@@ -40,7 +41,8 @@ O **RetroGBA** é um emulador de alta fidelidade e código aberto de **Game Boy 
 * 🎨 **Pipeline de Vídeo com Double-Buffering (59.73 FPS):** Renderização direta do framebuffer nativo com zero alocações na Garbage Collection durante o loop do jogo.
 * 🔊 **Áudio Estéreo PCM de Baixa Latência:** Síntese sonora direta pela APU do mGBA canalizada via `AudioTrack` em 32.768 Hz / 16-bit com sincronização de buffer.
 * 💾 **Persistência Atômica:** Gravações de Save RAM (`.sav`) usando escrita em arquivo temporário com rename atômico do sistema operacional, eliminando corrupção de save caso ocorra queda de energia.
-* 🎮 **Controles Virtuais com Háptica & Opacidade:** D-Pad virtual responsivo com multitouch, suporte a botões L/R, A/B, Start/Select, vibração tátil nativa e transparência ajustável.
+* 🎮 **Controles Virtuais & Editor Estilo My Boy!:** D-Pad contínuo de 8 direções com diagonais reais, deslize fluido `B ↔ A`, multi-touch com `actionMasked`, combos (`A+B`, `L+R`, `Quick Save/Load`), perfis Portrait/Landscape independentes com editor visual de arrastar e redimensionar (tela `3:2` e botões) e suporte a controles físicos Bluetooth/USB.
+* 🏆 **RetroAchievements Oficial Completo (`rcheevos`):** Fluxo `login2`, filtro estrito de conquistas oficiais (`Flags == 3`), Rich Presence nativo, validações `GameID > 0`, parâmetros `m`/`o`/`h`/`x` e fila persistente offline para desbloqueios.
 * 👾 **Motor de Trapaças (Cheats):** Adição e ativação em tempo real de códigos **GameShark**, **Action Replay** e **CodeBreaker** integrados diretamente ao subsistema de cheats do mGBA.
 * 🔋 **Gerenciamento de Energia e Térmica:** Detecção do modo de economia do Android e estresse térmico com aplicação de **frameskip adaptativo inteligente** e pausa total (0% consumo) ao minimizar o app.
 
@@ -162,10 +164,32 @@ git submodule update --init --recursive
 ./gradlew assembleRelease --no-daemon
 ```
 
-### 4. Localização dos Binários Gerados
+### 4. Localização dos Binários & Releases
 
-* **APK de Debug:** `app/build/outputs/apk/debug/app-debug.apk` (~24 MB)
-* **APK de Release (Unsigned):** `app/build/outputs/apk/release/app-release-unsigned.apk` (~15 MB com Proguard/R8)
+* **Download Pronto (`v1.1.0`):** Acesse a aba [Releases no GitHub](https://github.com/EnueLLL1/RetroGBA/releases/tag/v1.1.0) para baixar o APK assinado (`RetroGBA-v1.1.0-release-signed.apk`) diretamente no Android.
+* **APK de Debug:** `app/build/outputs/apk/debug/app-debug.apk`
+* **APK de Release (Unsigned):** `app/build/outputs/apk/release/app-release-unsigned.apk` (~15 MB)
+
+---
+
+## 🤖 Fluxo de Planejamento & Engenharia com IA (`/swarm` + TDD)
+
+Este projeto também documenta na prática como problemas reais observados durante o uso no celular — controles que travavam ao tocar, personalização limitada, áudio distorcido e desvios sutis de protocolo no RetroAchievements — foram diagnosticados e corrigidos de forma estruturada mesmo sem tempo disponível para codificar tudo manualmente do zero:
+
+1. **Diagnóstico em Frente Única antes de Codificar (Auditoria Paralela):**
+   Subagentes especializados auditaram separadamente a camada nativa (`mGBA`/JNI), o protocolo do RetroAchievements e a interface Jetpack Compose antes de qualquer edição.
+2. **Execução Coordenada via `/swarm` (Contratos Isolados por Domínio):**
+   Em vez de alterações soltas em arquivos gigantes, o trabalho foi dividido em quatro frentes sem conflito de arquivos — `engine-jni`, `retro-achievements`, `controls-myboy` e `ui-screens-previews` — guiadas por contratos exatos de interface (`ControlLayoutModels`, `IGbaEngine`, `UserPreferences`).
+3. **Verificação Independente (`/ecc-tdd` + Code Review + Compose Preview):**
+   Um agente auditor separado (`verifier`) validou o diff completo, executou a suíte com 110 testes unitários JUnit, compilou as ABIs nativas (`arm64-v8a` e `x86_64`) e renderizou 12 `@Preview`s visuais no painel antes do release.
+
+### 💡 Principais Aprendizados Técnicos da Revisão
+
+* **Polaridade de Botões no mGBA vs Hardware GBA:** Enquanto o registrador físico `REG_KEYINPUT` (`0x04000130`) opera em *active-low* (`0` = pressionado, `0x03FF` = solto), `mCore::setKeys` no mGBA espera máscara *active-high* porque o próprio núcleo aplica `0x3FF ^ input` em `io.c`. Enviar `0x03FF` direto fazia todos os botões parecerem pressionados após o primeiro toque. A ponte JNI (`retrogba_jni.cpp`) agora converte explicitamente antes de chamar `setKeys`, mantendo a consistência com o `SimulationGbaEngine`.
+* **Áudio Nativo com `blip_buf` (32.768 Hz):** Substituir buffers circulares manuais pelo `blip_t` nativo do mGBA (`configureAudio()` + `blip_read_samples`) elimina estalos e distorções causados por mudanças dinâmicas de `SOUNDBIAS`.
+* **Segurança de Memória e Estado no `rcheevos`:** Jogos de GBA variam de EEPROM 512B/8KB a Flash 128KB e SRAM 32KB; leituras da região `0x0E000000` devem ser limitadas por `GBASavedataSize(&gba->memory.savedata)` para evitar `SIGSEGV`, e `nativeLoadState` precisa invocar `rc_runtime_reset(&s_rcRuntime)` para não disparar falsos desbloqueios.
+* **Multi-Touch Real e Geometria no Compose:** Ler `event.actionMasked` e `event.actionIndex` dentro do escopo de `BoxWithConstraints` evita botões presos com múltiplos dedos e permite D-Pad contínuo de 8 direções (`tan(22.5°)`) mais deslize direto entre `B` e `A`.
+* **Estabilidade de Build NDK no Windows e Saves Atômicos:** Limitar o paralelismo (`--max-workers=1`, `CMAKE_BUILD_PARALLEL_LEVEL=2`) evita picos térmicos durante a compilação C++ para múltiplas ABIs, enquanto `AtomicFile` + `withContext(NonCancellable)` em `onAppPause()` protegem o `.sav` da bateria contra perda ao alternar de aba ou fechar o app.
 
 ---
 
