@@ -6,6 +6,7 @@ import kotlinx.coroutines.*
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Motor isolado de simulação gráfica / demonstração técnica.
@@ -37,7 +38,7 @@ class SimulationGbaEngine(
     val memory = GbaMemory()
     private val evaluator = AchievementEvaluator()
 
-    private var currentButtons = GbaInput.ALL_RELEASED
+    private val currentButtons = AtomicInteger(GbaInput.ALL_RELEASED)
     private var speedMultiplier: Float = 1.0f
 
     // Framebuffer
@@ -70,6 +71,7 @@ class SimulationGbaEngine(
 
     override fun loadRom(romBytes: ByteArray, achievements: List<Achievement>, saveBytes: ByteArray?): Boolean {
         if (romBytes.isEmpty()) return false
+        currentButtons.set(GbaInput.ALL_RELEASED)
         memory.rom = romBytes
         evaluator.loadAchievements(achievements)
 
@@ -145,15 +147,24 @@ class SimulationGbaEngine(
     override fun stop() {
         _isRunning.set(false)
         emulatorJob?.cancel()
+        currentButtons.set(GbaInput.ALL_RELEASED)
     }
 
     override fun setButtonPressed(buttonMask: Int, pressed: Boolean) {
-        currentButtons = if (pressed) {
-            currentButtons and buttonMask.inv()
-        } else {
-            currentButtons or buttonMask
+        currentButtons.updateAndGet { current ->
+            if (pressed) {
+                GbaInput.pressActiveLow(current, buttonMask)
+            } else {
+                GbaInput.releaseActiveLow(current, buttonMask)
+            }
         }
     }
+
+    override fun setButtonsMask(activeHighMask: Int) {
+        currentButtons.set(GbaInput.toActiveLowMask(activeHighMask))
+    }
+
+    internal fun getCurrentButtonsActiveLow(): Int = currentButtons.get()
 
     override fun setSpeedMultiplier(multiplier: Float) {
         speedMultiplier = multiplier
@@ -191,17 +202,18 @@ class SimulationGbaEngine(
 
     override fun setCheatEnabled(index: Int, enabled: Boolean) {}
 
-    private fun runFrame(frameCount: Long) {
-        // Atualiza chave de controle
-        memory.write8(0x04000130L, currentButtons and 0xFF)
-        memory.write8(0x04000131L, (currentButtons shr 8) and 0xFF)
+    internal fun runFrame(frameCount: Long = 0L) {
+        // Atualiza chave de controle (active-low em REG_KEYINPUT)
+        val buttons = currentButtons.get()
+        memory.write8(0x04000130L, buttons and 0xFF)
+        memory.write8(0x04000131L, (buttons shr 8) and 0xFF)
 
-        val isLeftPressed = (currentButtons and GbaInput.BUTTON_LEFT) == 0
-        val isRightPressed = (currentButtons and GbaInput.BUTTON_RIGHT) == 0
-        val isUpPressed = (currentButtons and GbaInput.BUTTON_UP) == 0
-        val isDownPressed = (currentButtons and GbaInput.BUTTON_DOWN) == 0
-        val isAPressed = (currentButtons and GbaInput.BUTTON_A) == 0
-        val isBPressed = (currentButtons and GbaInput.BUTTON_B) == 0
+        val isLeftPressed = (buttons and GbaInput.BUTTON_LEFT) == 0
+        val isRightPressed = (buttons and GbaInput.BUTTON_RIGHT) == 0
+        val isUpPressed = (buttons and GbaInput.BUTTON_UP) == 0
+        val isDownPressed = (buttons and GbaInput.BUTTON_DOWN) == 0
+        val isAPressed = (buttons and GbaInput.BUTTON_A) == 0
+        val isBPressed = (buttons and GbaInput.BUTTON_B) == 0
 
         if (isLeftPressed && playerX > 14) playerX -= 2
         if (isRightPressed && playerX < 226) playerX += 2
@@ -266,14 +278,14 @@ class SimulationGbaEngine(
             }
         }
 
-        drawButtonIndicator("L", 8, 146, (currentButtons and GbaInput.BUTTON_L) == 0, 0xFF9D4EDD.toInt())
-        drawButtonIndicator("R", 26, 146, (currentButtons and GbaInput.BUTTON_R) == 0, 0xFF9D4EDD.toInt())
+        drawButtonIndicator("L", 8, 146, (buttons and GbaInput.BUTTON_L) == 0, 0xFF9D4EDD.toInt())
+        drawButtonIndicator("R", 26, 146, (buttons and GbaInput.BUTTON_R) == 0, 0xFF9D4EDD.toInt())
         drawButtonIndicator("◄", 50, 146, isLeftPressed, 0xFF00E5FF.toInt())
         drawButtonIndicator("▲", 62, 146, isUpPressed, 0xFF00E5FF.toInt())
         drawButtonIndicator("▼", 74, 146, isDownPressed, 0xFF00E5FF.toInt())
         drawButtonIndicator("►", 86, 146, isRightPressed, 0xFF00E5FF.toInt())
-        drawButtonIndicator("SL", 110, 146, (currentButtons and GbaInput.BUTTON_SELECT) == 0, 0xFFFFBE0B.toInt())
-        drawButtonIndicator("ST", 130, 146, (currentButtons and GbaInput.BUTTON_START) == 0, 0xFFFFBE0B.toInt())
+        drawButtonIndicator("SL", 110, 146, (buttons and GbaInput.BUTTON_SELECT) == 0, 0xFFFFBE0B.toInt())
+        drawButtonIndicator("ST", 130, 146, (buttons and GbaInput.BUTTON_START) == 0, 0xFFFFBE0B.toInt())
         drawButtonIndicator("B", 165, 146, isBPressed, 0xFFFF2A6D.toInt())
         drawButtonIndicator("A", 185, 146, isAPressed, 0xFF00FF66.toInt())
     }

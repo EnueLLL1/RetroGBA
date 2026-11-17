@@ -1,6 +1,7 @@
 package com.retro.gba.data.repository
 
 import android.content.Context
+import androidx.core.util.AtomicFile
 import com.retro.gba.security.RomSecurityValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,9 +26,45 @@ class SaveRepository(
 
     constructor(context: Context) : this(File(context.filesDir, "saves"))
 
+    private val fileIoLock = Any()
+
     init {
         if (!saveDirectory.exists()) {
             saveDirectory.mkdirs()
+        }
+    }
+
+    private fun writeAtomically(targetFile: File, data: ByteArray): Boolean {
+        synchronized(fileIoLock) {
+            val atomicFile = AtomicFile(targetFile)
+            var outputStream: FileOutputStream? = null
+            return try {
+                outputStream = atomicFile.startWrite()
+                outputStream.write(data)
+                outputStream.flush()
+                atomicFile.finishWrite(outputStream)
+                true
+            } catch (_: Exception) {
+                if (outputStream != null) {
+                    atomicFile.failWrite(outputStream)
+                }
+                false
+            }
+        }
+    }
+
+    private fun readAtomically(targetFile: File, maxBytes: Long): ByteArray? {
+        synchronized(fileIoLock) {
+            val backupFile = File("${targetFile.path}.bak")
+            if (!targetFile.exists() && !backupFile.exists()) return null
+            if (targetFile.exists() && targetFile.length() > maxBytes) return null
+
+            return try {
+                val data = AtomicFile(targetFile).readFully()
+                if (data.isEmpty() || data.size.toLong() > maxBytes) null else data
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 
@@ -49,8 +86,7 @@ class SaveRepository(
     }
 
     /**
-     * Persistência atômica de Save RAM (bateria do cartucho).
-     * Grava primeiramente em arquivo .tmp e realiza renomeação atômica no sistema de arquivos.
+     * Persistência atômica de Save RAM (bateria do cartucho) via androidx.core.util.AtomicFile.
      */
     suspend fun saveBatteryRam(romHash: String, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
         if (data.isEmpty() || data.size > RomSecurityValidator.MAX_SAVE_RAM_SIZE_BYTES) {
@@ -58,18 +94,7 @@ class SaveRepository(
         }
 
         val targetFile = getBatterySaveFile(romHash) ?: return@withContext false
-        val tempFile = File(saveDirectory, "${targetFile.name}.tmp")
-
-        try {
-            FileOutputStream(tempFile).use { it.write(data) }
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-            tempFile.renameTo(targetFile)
-        } catch (e: Exception) {
-            tempFile.delete()
-            false
-        }
+        writeAtomically(targetFile, data)
     }
 
     /**
@@ -77,19 +102,14 @@ class SaveRepository(
      */
     suspend fun loadBatteryRam(romHash: String): ByteArray? = withContext(Dispatchers.IO) {
         val file = getBatterySaveFile(romHash) ?: return@withContext null
-        if (!file.exists() || !file.canRead() || file.length() == 0L) return@withContext null
-        if (file.length() > RomSecurityValidator.MAX_SAVE_RAM_SIZE_BYTES) return@withContext null
-
-        try {
-            file.readBytes()
-        } catch (e: Exception) {
-            null
-        }
+        readAtomically(file, RomSecurityValidator.MAX_SAVE_RAM_SIZE_BYTES)
     }
 
     suspend fun hasBatteryRam(romHash: String): Boolean = withContext(Dispatchers.IO) {
         val file = getBatterySaveFile(romHash) ?: return@withContext false
-        file.exists() && file.length() > 0L
+        synchronized(fileIoLock) {
+            file.exists() && file.length() > 0L
+        }
     }
 
     /**
@@ -101,18 +121,7 @@ class SaveRepository(
         }
 
         val targetFile = getStateFile(romHash, slot) ?: return@withContext false
-        val tempFile = File(saveDirectory, "${targetFile.name}.tmp")
-
-        try {
-            FileOutputStream(tempFile).use { it.write(data) }
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-            tempFile.renameTo(targetFile)
-        } catch (e: Exception) {
-            tempFile.delete()
-            false
-        }
+        writeAtomically(targetFile, data)
     }
 
     /**
@@ -120,14 +129,7 @@ class SaveRepository(
      */
     suspend fun loadState(romHash: String, slot: Int): ByteArray? = withContext(Dispatchers.IO) {
         val file = getStateFile(romHash, slot) ?: return@withContext null
-        if (!file.exists() || !file.canRead() || file.length() == 0L) return@withContext null
-        if (file.length() > RomSecurityValidator.MAX_SAVE_STATE_SIZE_BYTES) return@withContext null
-
-        try {
-            file.readBytes()
-        } catch (e: Exception) {
-            null
-        }
+        readAtomically(file, RomSecurityValidator.MAX_SAVE_STATE_SIZE_BYTES)
     }
 
     /**
@@ -152,6 +154,10 @@ class SaveRepository(
 
     suspend fun deleteState(romHash: String, slot: Int): Boolean = withContext(Dispatchers.IO) {
         val file = getStateFile(romHash, slot) ?: return@withContext false
-        if (file.exists()) file.delete() else false
+        synchronized(fileIoLock) {
+            val existed = file.exists()
+            AtomicFile(file).delete()
+            existed
+        }
     }
 }

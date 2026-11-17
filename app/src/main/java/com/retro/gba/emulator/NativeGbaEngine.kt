@@ -53,7 +53,7 @@ class NativeGbaEngine(
     private var emulationExecutor: ExecutorService? = null
 
     @Volatile private var speedMultiplier: Float = 1.0f
-    @Volatile private var currentButtons: Int = GbaInput.ALL_RELEASED
+    private val currentButtons = AtomicInteger(GbaInput.ALL_RELEASED)
 
     // Double buffering de bitmaps para evitar novas alocações e garantir recomposição reativa no Compose
     private val frameBuffers: Array<Bitmap?> = arrayOfNulls(2)
@@ -103,6 +103,9 @@ class NativeGbaEngine(
 
         val loaded = nativeLoadRom(romBytes, romBytes.size)
         if (!loaded) return false
+
+        currentButtons.set(GbaInput.ALL_RELEASED)
+        nativeSetButtons(GbaInput.ALL_RELEASED)
 
         saveBytes?.let {
             if (it.isNotEmpty()) {
@@ -274,6 +277,7 @@ class NativeGbaEngine(
         audioPlayer = null
         directVideoBuffer = null
         activeAchievementsMap.clear()
+        currentButtons.set(GbaInput.ALL_RELEASED)
 
         if (isNativeLibLoaded) {
             nativeDestroy()
@@ -281,15 +285,38 @@ class NativeGbaEngine(
     }
 
     override fun setButtonPressed(buttonMask: Int, pressed: Boolean) {
-        currentButtons = if (pressed) {
-            currentButtons and buttonMask.inv()
-        } else {
-            currentButtons or buttonMask
+        val updated = currentButtons.updateAndGet { current ->
+            if (pressed) {
+                GbaInput.pressActiveLow(current, buttonMask)
+            } else {
+                GbaInput.releaseActiveLow(current, buttonMask)
+            }
         }
         if (isNativeLibLoaded) {
-            nativeSetButtons(currentButtons)
+            nativeSetButtons(updated)
         }
     }
+
+    override fun setButtonsMask(activeHighMask: Int) {
+        val activeLow = GbaInput.toActiveLowMask(activeHighMask)
+        currentButtons.set(activeLow)
+        if (isNativeLibLoaded) {
+            nativeSetButtons(activeLow)
+        }
+    }
+
+    override fun activateRichPresence(script: String) {
+        if (isNativeLibLoaded) {
+            nativeActivateRichPresence(script)
+        }
+    }
+
+    override fun getRichPresence(): String {
+        if (!isNativeLibLoaded) return ""
+        return nativeGetRichPresence() ?: ""
+    }
+
+    internal fun getCurrentButtonsActiveLow(): Int = currentButtons.get()
 
     override fun setSpeedMultiplier(multiplier: Float) {
         speedMultiplier = multiplier
@@ -345,6 +372,8 @@ class NativeGbaEngine(
     private external fun nativeDeactivateAchievement(id: Long)
     private external fun nativeClearAchievements()
     private external fun nativeGetTriggeredAchievements(): LongArray?
+    private external fun nativeActivateRichPresence(script: String): Boolean
+    private external fun nativeGetRichPresence(): String?
     private external fun nativeGetSaveRam(): ByteArray?
     private external fun nativeLoadSaveRam(saveBytes: ByteArray): Boolean
     private external fun nativeSaveState(): ByteArray?

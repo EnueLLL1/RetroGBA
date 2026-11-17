@@ -37,7 +37,8 @@ data class GameInfo(
     val imageIcon: String? = null,
     val romHash: String? = null,
     val totalAchievements: Int = 0,
-    val totalPoints: Int = 0
+    val totalPoints: Int = 0,
+    val richPresencePatch: String = ""
 ) {
     val iconUrl: String
         get() = imageIcon?.let { "https://media.retroachievements.org$it" } ?: ""
@@ -48,7 +49,23 @@ data class UserProfile(
     val totalPoints: Int,
     val hardcorePoints: Int,
     val rank: Int,
-    val avatarUrl: String
+    val avatarUrl: String,
+    val softcorePoints: Int = 0
+)
+
+data class LoginResult(
+    val username: String,
+    val token: String,
+    val score: Int = 0,
+    val softcoreScore: Int = 0,
+    val avatarUrl: String = ""
+)
+
+data class PendingAchievementUnlock(
+    val achievementId: Int,
+    val hardcore: Boolean,
+    val gameHash: String,
+    val unlockedAtEpochSeconds: Long
 )
 
 data class RomItem(

@@ -5,30 +5,51 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.retro.gba.data.model.Achievement
 import com.retro.gba.data.model.GameInfo
+import com.retro.gba.data.model.LoginResult
 import com.retro.gba.data.model.UserProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-class RetroAchievementsApi {
+class RetroAchievementsServerException(
+    message: String,
+    val httpCode: Int = 200,
+    val isAlreadyUnlocked: Boolean = false,
+    val isAuthError: Boolean = false,
+    val isTransient: Boolean = false
+) : Exception(message)
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
-                .header("User-Agent", "RetroGBA/1.0 (Android; mGBA)")
+class RetroAchievementsApi(
+    baseUrl: String = DEFAULT_BASE_URL,
+    private val client: OkHttpClient = createDefaultClient()
+) {
+
+    companion object {
+        private const val DEFAULT_BASE_URL = "https://retroachievements.org"
+        private const val MEDIA_BASE_URL = "https://media.retroachievements.org"
+        private const val OFFICIAL_ACHIEVEMENT_FLAG = 3
+
+        private fun createDefaultClient(): OkHttpClient {
+            return OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .addInterceptor { chain ->
+                    val request = chain.request().newBuilder()
+                        .header("User-Agent", "RetroGBA/1.0 (Android; mGBA)")
+                        .build()
+                    chain.proceed(request)
+                }
+                .addInterceptor(com.retro.gba.security.NetworkSecurityInterceptor(enableLogging = true))
                 .build()
-            chain.proceed(request)
         }
-        .addInterceptor(com.retro.gba.security.NetworkSecurityInterceptor(enableLogging = true))
-        .build()
+    }
 
-    private val baseUrl = "https://retroachievements.org"
+    private val baseUrl: String = baseUrl.trimEnd('/')
 
     /**
      * Faz o parsing seguro de uma string para JsonElement sem lançar exceções não tratadas
@@ -56,56 +77,74 @@ class RetroAchievementsApi {
         }
         if (element.isJsonObject) {
             val obj = element.asJsonObject
-            when {
-                obj.has("Error") && !obj.get("Error").isJsonNull -> return obj.get("Error").asString
-                obj.has("message") && !obj.get("message").isJsonNull -> return obj.get("message").asString
-                obj.has("Code") && !obj.get("Code").isJsonNull -> return "Erro: ${obj.get("Code").asString}"
-                obj.has("Status") && !obj.get("Status").isJsonNull -> return "Erro de autenticação (Status: ${obj.get("Status").asString})"
+            obj.getStringOrNull("Error")?.takeIf { it.isNotBlank() }?.let { return it }
+            obj.getStringOrNull("message")?.takeIf { it.isNotBlank() }?.let { return it }
+            obj.getStringOrNull("Code")?.takeIf { it.isNotBlank() }?.let { return "Erro: $it" }
+            obj.getStringOrNull("Status")?.takeIf { it.isNotBlank() }?.let {
+                return "Erro de autenticação (Status: $it)"
             }
         }
         return defaultMsg
     }
 
     /**
-     * Autentica no RetroAchievements via requisição POST urlencoded para /dorequest.php.
-     * Suporta autenticação tanto por senha (parâmetro 'p') quanto por Web API Key / Token (parâmetro 't').
+     * Autentica no RetroAchievements via POST urlencoded em /dorequest.php usando r=login2.
+     * Retorna Pair(username, token) preservando compatibilidade com chamadores existentes.
      */
     suspend fun login(username: String, tokenOrPass: String): Result<Pair<String, String>> =
+        loginWithDetails(username, tokenOrPass).map { Pair(it.username, it.token) }
+
+    /**
+     * Autentica via r=login2 e extrai Token, Score, SoftcoreScore e AvatarUrl para cache local.
+     * Suporta senha ('p') e token/Web API Key ('t').
+     */
+    suspend fun loginWithDetails(username: String, tokenOrPass: String): Result<LoginResult> =
         withContext(Dispatchers.IO) {
             if (username.isBlank() || tokenOrPass.isBlank()) {
-                return@withContext Result.failure(Exception("Nome de usuário e senha/chave de API são obrigatórios"))
+                return@withContext Result.failure(
+                    Exception("Nome de usuário e senha/chave de API são obrigatórios")
+                )
             }
 
             val looksLikeApiToken = tokenOrPass.length == 32 && tokenOrPass.all { it.isLetterOrDigit() }
 
-            // Se parece um token/chave web, tenta primeiro como token ('t'); caso contrário, tenta como senha ('p')
             val primaryResult = executeLoginAttempt(username, tokenOrPass, useTokenParam = looksLikeApiToken)
             if (primaryResult.isSuccess) {
                 return@withContext primaryResult
             }
 
-            // Se parece uma Web API Key de 32 caracteres, tenta validar via API_GetUserSummary.php
             if (looksLikeApiToken) {
                 val profileResult = getUserProfile(username, tokenOrPass)
-                if (profileResult.isSuccess) {
-                    return@withContext Result.success(Pair(username, tokenOrPass))
+                val profile = profileResult.getOrNull()
+                if (profile != null) {
+                    return@withContext Result.success(
+                        LoginResult(
+                            username = profile.username,
+                            token = tokenOrPass,
+                            score = profile.hardcorePoints,
+                            softcoreScore = profile.softcorePoints,
+                            avatarUrl = profile.avatarUrl
+                        )
+                    )
                 }
             }
 
-            // Fallback: se a primeira tentativa falhar, tenta com o parâmetro alternativo ('p' vs 't')
             val fallbackResult = executeLoginAttempt(username, tokenOrPass, useTokenParam = !looksLikeApiToken)
             if (fallbackResult.isSuccess) {
                 return@withContext fallbackResult
             }
 
-            // Retorna o erro mais descritivo
             primaryResult
         }
 
-    private fun executeLoginAttempt(username: String, secret: String, useTokenParam: Boolean): Result<Pair<String, String>> {
+    private fun executeLoginAttempt(
+        username: String,
+        secret: String,
+        useTokenParam: Boolean
+    ): Result<LoginResult> {
         return try {
             val formBody = FormBody.Builder()
-                .add("r", "login")
+                .add("r", "login2")
                 .add("u", username)
                 .add(if (useTokenParam) "t" else "p", secret)
                 .build()
@@ -121,12 +160,30 @@ class RetroAchievementsApi {
 
                 if (jsonElement != null && jsonElement.isJsonObject) {
                     val json = jsonElement.asJsonObject
-                    if (json.has("Success") && json.get("Success").asBoolean) {
-                        val user = json.get("User")?.asString ?: username
-                        val token = json.get("Token")?.asString ?: ""
-                        Result.success(Pair(user, token))
+                    if (json.getBooleanOrNull("Success") == true) {
+                        val user = json.getStringOrNull("User")?.takeIf { it.isNotBlank() } ?: username
+                        val token = json.getStringOrNull("Token").orEmpty()
+                        if (token.isBlank()) {
+                            return Result.failure(Exception("Token de sessão ausente na resposta do servidor"))
+                        }
+                        val score = json.getIntOrNull("Score") ?: 0
+                        val softcoreScore = json.getIntOrNull("SoftcoreScore") ?: 0
+                        val rawAvatar = json.getStringOrNull("AvatarUrl").orEmpty()
+                        val avatarUrl = resolveAvatarUrl(rawAvatar, user)
+                        Result.success(
+                            LoginResult(
+                                username = user,
+                                token = token,
+                                score = score,
+                                softcoreScore = softcoreScore,
+                                avatarUrl = avatarUrl
+                            )
+                        )
                     } else {
-                        val error = extractErrorMessage(json, "Credenciais inválidas. Verifique seu usuário e senha/chave.")
+                        val error = extractErrorMessage(
+                            json,
+                            "Credenciais inválidas. Verifique seu usuário e senha/chave."
+                        )
                         Result.failure(Exception(error))
                     }
                 } else if (jsonElement != null && jsonElement.isJsonPrimitive) {
@@ -147,8 +204,14 @@ class RetroAchievementsApi {
 
     suspend fun getGameIdByHash(romMd5: String): Result<Long> =
         withContext(Dispatchers.IO) {
+            if (romMd5.isBlank()) {
+                return@withContext Result.failure(Exception("Hash MD5 da ROM inválido"))
+            }
             try {
-                val url = "$baseUrl/dorequest.php?r=gameid&m=$romMd5"
+                val url = "$baseUrl/dorequest.php".toHttpUrl().newBuilder()
+                    .addQueryParameter("r", "gameid")
+                    .addQueryParameter("m", romMd5)
+                    .build()
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string()
@@ -156,11 +219,14 @@ class RetroAchievementsApi {
 
                     if (jsonElement != null && jsonElement.isJsonObject) {
                         val json = jsonElement.asJsonObject
-                        if (json.has("Success") && json.get("Success").asBoolean && json.has("GameID")) {
-                            val gameId = json.get("GameID").asLong
+                        val success = json.getBooleanOrNull("Success") == true
+                        val gameId = json.getLongOrNull("GameID") ?: 0L
+                        if (success && gameId > 0L) {
                             Result.success(gameId)
                         } else {
-                            Result.failure(Exception("Jogo não encontrado no RetroAchievements para esta ROM (MD5: $romMd5)"))
+                            Result.failure(
+                                Exception("Jogo não encontrado no RetroAchievements para esta ROM (MD5: $romMd5)")
+                            )
                         }
                     } else {
                         Result.failure(Exception("Jogo não catalogado no RetroAchievements para esta ROM"))
@@ -178,34 +244,48 @@ class RetroAchievementsApi {
     ): Result<Pair<GameInfo, List<Achievement>>> =
         withContext(Dispatchers.IO) {
             try {
-                var url = "$baseUrl/dorequest.php?r=patch&g=$gameId"
+                val urlBuilder = "$baseUrl/dorequest.php".toHttpUrl().newBuilder()
+                    .addQueryParameter("r", "patch")
+                    .addQueryParameter("g", gameId.toString())
                 if (!username.isNullOrBlank() && !token.isNullOrBlank()) {
-                    url += "&u=$username&t=$token"
+                    urlBuilder
+                        .addQueryParameter("u", username)
+                        .addQueryParameter("t", token)
                 }
-                val request = Request.Builder().url(url).build()
+                val request = Request.Builder().url(urlBuilder.build()).build()
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string()
                     val jsonElement = parseSafeJson(body)
 
                     if (jsonElement != null && jsonElement.isJsonObject) {
                         val json = jsonElement.asJsonObject
-                        if (json.has("Success") && json.get("Success").asBoolean && json.has("PatchData")) {
-                            val patchData = json.getAsJsonObject("PatchData")
-                            val title = patchData.get("Title")?.asString ?: "Jogo Desconhecido"
-                            val icon = patchData.get("ImageIcon")?.asString
+                        val patchDataElem = json.get("PatchData")
+                        if (json.getBooleanOrNull("Success") == true &&
+                            patchDataElem != null &&
+                            patchDataElem.isJsonObject
+                        ) {
+                            val patchData = patchDataElem.asJsonObject
+                            val title = patchData.getStringOrNull("Title") ?: "Jogo Desconhecido"
+                            val consoleId = patchData.getIntOrNull("ConsoleID") ?: 5
+                            val icon = patchData.getStringOrNull("ImageIcon")
+                            val richPresencePatch = patchData.getStringOrNull("RichPresencePatch") ?: ""
 
                             val achievementsList = mutableListOf<Achievement>()
-                            if (patchData.has("Achievements")) {
-                                val achArray = patchData.getAsJsonArray("Achievements")
-                                for (element in achArray) {
+                            val achElem = patchData.get("Achievements")
+                            if (achElem != null && achElem.isJsonArray) {
+                                for (element in achElem.asJsonArray) {
                                     if (!element.isJsonObject) continue
                                     val item = element.asJsonObject
-                                    val id = item.get("ID")?.asLong ?: continue
-                                    val achTitle = item.get("Title")?.asString ?: "Conquista"
-                                    val desc = item.get("Description")?.asString ?: ""
-                                    val points = item.get("Points")?.asInt ?: 0
-                                    val badgeName = item.get("BadgeName")?.asString ?: ""
-                                    val memAddr = item.get("MemAddr")?.asString
+                                    // Filtra estritamente conquistas oficiais (Flags == 3), descartando Unofficial (Flags == 5, etc.)
+                                    val flags = item.getIntOrNull("Flags")
+                                    if (flags != OFFICIAL_ACHIEVEMENT_FLAG) continue
+
+                                    val id = item.getLongOrNull("ID") ?: continue
+                                    val achTitle = item.getStringOrNull("Title") ?: "Conquista"
+                                    val desc = item.getStringOrNull("Description") ?: ""
+                                    val points = item.getIntOrNull("Points") ?: 0
+                                    val badgeName = item.getStringOrNull("BadgeName") ?: ""
+                                    val memAddr = item.getStringOrNull("MemAddr")
 
                                     achievementsList.add(
                                         Achievement(
@@ -224,9 +304,11 @@ class RetroAchievementsApi {
                             val gameInfo = GameInfo(
                                 id = gameId,
                                 title = title,
+                                consoleId = consoleId,
                                 imageIcon = icon,
                                 totalAchievements = achievementsList.size,
-                                totalPoints = totalPoints
+                                totalPoints = totalPoints,
+                                richPresencePatch = richPresencePatch
                             )
 
                             Result.success(Pair(gameInfo, achievementsList))
@@ -273,11 +355,11 @@ class RetroAchievementsApi {
 
                 if (jsonElement != null && jsonElement.isJsonObject) {
                     val json = jsonElement.asJsonObject
-                    if (json.has("Success") && json.get("Success").asBoolean) {
+                    if (json.getBooleanOrNull("Success") == true) {
                         val arrayKey = if (isHardcore) "HardcoreUnlocks" else "Unlocks"
                         val arraysToProcess = listOfNotNull(
-                            if (json.has(arrayKey) && json.get(arrayKey).isJsonArray) json.getAsJsonArray(arrayKey) else null,
-                            if (!isHardcore && json.has("HardcoreUnlocks") && json.get("HardcoreUnlocks").isJsonArray) json.getAsJsonArray("HardcoreUnlocks") else null
+                            json.get(arrayKey)?.takeIf { it.isJsonArray }?.asJsonArray,
+                            if (!isHardcore) json.get("HardcoreUnlocks")?.takeIf { it.isJsonArray }?.asJsonArray else null
                         )
 
                         for (arr in arraysToProcess) {
@@ -285,19 +367,25 @@ class RetroAchievementsApi {
                                 when {
                                     elem.isJsonObject -> {
                                         val obj = elem.asJsonObject
-                                        val id = obj.get("ID")?.asLong ?: obj.get("AchievementID")?.asLong
+                                        val id = obj.getLongOrNull("ID") ?: obj.getLongOrNull("AchievementID")
                                         if (id != null) unlockedIds.add(id)
                                     }
                                     elem.isJsonPrimitive -> {
-                                        val id = elem.asLong
-                                        unlockedIds.add(id)
+                                        val id = try {
+                                            elem.asLong
+                                        } catch (_: NumberFormatException) {
+                                            null
+                                        }
+                                        if (id != null) unlockedIds.add(id)
                                     }
                                 }
                             }
                         }
                         Result.success(unlockedIds)
                     } else {
-                        Result.failure(Exception(extractErrorMessage(json, "Falha ao iniciar sessão no RetroAchievements")))
+                        Result.failure(
+                            Exception(extractErrorMessage(json, "Falha ao iniciar sessão no RetroAchievements"))
+                        )
                     }
                 } else {
                     if (response.isSuccessful) {
@@ -316,17 +404,24 @@ class RetroAchievementsApi {
         username: String,
         token: String,
         gameId: Long,
-        richPresence: String? = null
+        richPresence: String? = null,
+        hardcore: Boolean = true,
+        gameHash: String = ""
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
+            val hardcoreFlag = if (hardcore) "1" else "0"
             val builder = FormBody.Builder()
                 .add("r", "ping")
                 .add("u", username)
                 .add("t", token)
                 .add("g", gameId.toString())
+                .add("h", hardcoreFlag)
 
             if (!richPresence.isNullOrBlank()) {
                 builder.add("m", richPresence)
+            }
+            if (gameHash.isNotBlank()) {
+                builder.add("x", gameHash)
             }
 
             val request = Request.Builder()
@@ -335,6 +430,16 @@ class RetroAchievementsApi {
                 .build()
 
             client.newCall(request).execute().use { response ->
+                val body = response.body?.string()
+                val jsonElement = parseSafeJson(body)
+                if (jsonElement != null && jsonElement.isJsonObject) {
+                    val json = jsonElement.asJsonObject
+                    if (json.getBooleanOrNull("Success") == false) {
+                        return@withContext Result.failure(
+                            Exception(extractErrorMessage(json, "Falha ao enviar ping"))
+                        )
+                    }
+                }
                 Result.success(response.isSuccessful)
             }
         } catch (e: Exception) {
@@ -342,29 +447,59 @@ class RetroAchievementsApi {
         }
     }
 
+    suspend fun sendPing(
+        username: String,
+        token: String,
+        gameId: Long,
+        richPresence: String? = null,
+        hardcore: Boolean = true,
+        gameHash: String = ""
+    ): Result<Boolean> = ping(
+        username = username,
+        token = token,
+        gameId = gameId,
+        richPresence = richPresence,
+        hardcore = hardcore,
+        gameHash = gameHash
+    )
+
     suspend fun awardAchievement(
         username: String,
         token: String,
         achievementId: Long,
-        isHardcore: Boolean
+        isHardcore: Boolean,
+        gameHash: String = "",
+        secondsSinceUnlock: Long = 0L
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val hardcoreFlag = if (isHardcore) "1" else "0"
-            val rawSig = "$achievementId$username$hardcoreFlag"
-            val vSig = MessageDigest.getInstance("MD5").digest(rawSig.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+            val clampedSeconds = secondsSinceUnlock.coerceAtLeast(0L)
+            // Conforme rcheevos (rc_api_runtime.c): quando offset > 0, inclui achievementId + offset na assinatura MD5.
+            val rawSig = if (clampedSeconds > 0L) {
+                "$achievementId$username$hardcoreFlag$achievementId$clampedSeconds"
+            } else {
+                "$achievementId$username$hardcoreFlag"
+            }
+            val vSig = MessageDigest.getInstance("MD5")
+                .digest(rawSig.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
 
-            val formBody = FormBody.Builder()
+            val formBuilder = FormBody.Builder()
                 .add("r", "awardachievement")
                 .add("u", username)
                 .add("t", token)
                 .add("a", achievementId.toString())
                 .add("h", hardcoreFlag)
+                .add("o", clampedSeconds.toString())
                 .add("v", vSig)
-                .build()
+
+            if (gameHash.isNotBlank()) {
+                formBuilder.add("m", gameHash)
+            }
 
             val request = Request.Builder()
                 .url("$baseUrl/dorequest.php")
-                .post(formBody)
+                .post(formBuilder.build())
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -373,16 +508,53 @@ class RetroAchievementsApi {
 
                 if (jsonElement != null && jsonElement.isJsonObject) {
                     val json = jsonElement.asJsonObject
-                    if (json.has("Success") && json.get("Success").asBoolean) {
+                    if (json.getBooleanOrNull("Success") == true) {
                         Result.success(true)
                     } else {
                         val err = extractErrorMessage(json, "Falha ao submeter conquista")
-                        Result.failure(Exception(err))
+                        val alreadyUnlocked = isAlreadyUnlockedMessage(err)
+                        val authError = isAuthErrorCodeOrMessage(response.code, err)
+                        val transient = !alreadyUnlocked && !authError &&
+                            isTransientHttpOrMessage(response.code, err)
+                        Result.failure(
+                            RetroAchievementsServerException(
+                                message = err,
+                                httpCode = response.code,
+                                isAlreadyUnlocked = alreadyUnlocked,
+                                isAuthError = authError,
+                                isTransient = transient
+                            )
+                        )
                     }
                 } else if (jsonElement != null && jsonElement.isJsonPrimitive) {
-                    Result.failure(Exception(jsonElement.asString))
+                    val msg = jsonElement.asString
+                    val authError = isAuthErrorCodeOrMessage(response.code, msg)
+                    val transient = !authError && isTransientHttpOrMessage(response.code, msg)
+                    Result.failure(
+                        RetroAchievementsServerException(
+                            message = msg.ifBlank { "Falha na submissão da conquista (HTTP ${response.code})" },
+                            httpCode = response.code,
+                            isAlreadyUnlocked = isAlreadyUnlockedMessage(msg),
+                            isAuthError = authError,
+                            isTransient = transient
+                        )
+                    )
                 } else {
-                    Result.failure(Exception("Falha na submissão da conquista (HTTP ${response.code})"))
+                    val authError = response.code == 401 || response.code == 403
+                    val transient = !authError && (
+                        response.code == 429 ||
+                            response.code == 408 ||
+                            response.code >= 500 ||
+                            response.isSuccessful
+                        )
+                    Result.failure(
+                        RetroAchievementsServerException(
+                            message = "Falha na submissão da conquista (HTTP ${response.code})",
+                            httpCode = response.code,
+                            isAuthError = authError,
+                            isTransient = transient
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -392,43 +564,167 @@ class RetroAchievementsApi {
 
     suspend fun getUserProfile(username: String, webApiKey: String): Result<UserProfile> =
         withContext(Dispatchers.IO) {
+            if (username.isBlank() || webApiKey.isBlank()) {
+                return@withContext Result.failure(
+                    RetroAchievementsServerException(
+                        message = "Chave de API Web ausente",
+                        httpCode = 401,
+                        isAuthError = true
+                    )
+                )
+            }
             try {
-                val url = "$baseUrl/API/API_GetUserSummary.php?z=$username&y=$webApiKey&u=$username&g=0&a=0"
+                val url = "$baseUrl/API/API_GetUserSummary.php".toHttpUrl().newBuilder()
+                    .addQueryParameter("z", username)
+                    .addQueryParameter("y", webApiKey)
+                    .addQueryParameter("u", username)
+                    .addQueryParameter("g", "0")
+                    .addQueryParameter("a", "0")
+                    .build()
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string()
                     val jsonElement = parseSafeJson(body)
 
-                    if (jsonElement != null && jsonElement.isJsonObject) {
+                    if (response.isSuccessful && jsonElement != null && jsonElement.isJsonObject) {
                         val json = jsonElement.asJsonObject
-                        if (json.has("TotalPoints")) {
-                            val points = json.get("TotalPoints").asInt
-                            val hardcorePoints = json.get("TotalSoftcorePoints")?.asInt ?: points
-                            val rank = json.get("Rank")?.asInt ?: 0
-                            val userPic = json.get("UserPic")?.asString ?: ""
-                            val avatarUrl = "$baseUrl$userPic"
+                        val totalPointsElem = json.get("TotalPoints")
+                        if (totalPointsElem != null && !totalPointsElem.isJsonNull) {
+                            val points = json.getIntOrNull("TotalPoints") ?: 0
+                            val softcorePoints = json.getIntOrNull("TotalSoftcorePoints") ?: 0
+                            val rank = json.getIntOrNull("Rank") ?: 0
+                            val userPic = json.getStringOrNull("UserPic").orEmpty()
+                            val avatarUrl = resolveAvatarUrl(userPic, username)
 
                             Result.success(
                                 UserProfile(
                                     username = username,
                                     totalPoints = points,
-                                    hardcorePoints = hardcorePoints,
+                                    hardcorePoints = points,
                                     rank = rank,
-                                    avatarUrl = avatarUrl
+                                    avatarUrl = avatarUrl,
+                                    softcorePoints = softcorePoints
                                 )
                             )
                         } else {
                             val error = extractErrorMessage(json, "Perfil não localizado ou chave não autorizada")
-                            Result.failure(Exception(error))
+                            Result.failure(
+                                RetroAchievementsServerException(
+                                    message = error,
+                                    httpCode = response.code,
+                                    isAuthError = response.code == 401 || response.code == 403
+                                )
+                            )
                         }
                     } else if (jsonElement != null && jsonElement.isJsonPrimitive) {
-                        Result.failure(Exception(jsonElement.asString))
+                        Result.failure(
+                            RetroAchievementsServerException(
+                                message = jsonElement.asString,
+                                httpCode = response.code,
+                                isAuthError = response.code == 401 || response.code == 403
+                            )
+                        )
                     } else {
-                        Result.failure(Exception("Não foi possível carregar dados do perfil (HTTP ${response.code})"))
+                        Result.failure(
+                            RetroAchievementsServerException(
+                                message = "Não foi possível carregar dados do perfil (HTTP ${response.code})",
+                                httpCode = response.code,
+                                isAuthError = response.code == 401 || response.code == 403,
+                                isTransient = response.code >= 500 || response.code == 429
+                            )
+                        )
                     }
                 }
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
+
+    suspend fun fetchProfile(
+        username: String,
+        webApiKey: String,
+        fallbackProfile: UserProfile? = null
+    ): Result<UserProfile> {
+        val remote = getUserProfile(username, webApiKey)
+        if (remote.isSuccess) return remote
+        return if (fallbackProfile != null) {
+            Result.success(fallbackProfile)
+        } else {
+            remote
+        }
+    }
+
+    private fun resolveAvatarUrl(rawAvatar: String, username: String): String {
+        val trimmed = rawAvatar.trim()
+        return when {
+            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+            trimmed.startsWith("/") -> "$MEDIA_BASE_URL$trimmed"
+            trimmed.isNotBlank() -> trimmed
+            username.isNotBlank() -> "$MEDIA_BASE_URL/UserPic/$username.png"
+            else -> ""
+        }
+    }
+
+    private fun isAlreadyUnlockedMessage(msg: String): Boolean {
+        return msg.contains("already has", ignoreCase = true) ||
+            msg.contains("already awarded", ignoreCase = true) ||
+            msg.contains("already unlocked", ignoreCase = true)
+    }
+
+    private fun isAuthErrorCodeOrMessage(httpCode: Int, msg: String): Boolean {
+        if (httpCode == 401 || httpCode == 403) return true
+        return msg.contains("invalid credentials", ignoreCase = true) ||
+            msg.contains("credentials invalid", ignoreCase = true) ||
+            msg.contains("invalid token", ignoreCase = true) ||
+            msg.contains("expired token", ignoreCase = true) ||
+            msg.contains("invalid user", ignoreCase = true) ||
+            msg.contains("unauthenticated", ignoreCase = true) ||
+            msg.contains("access denied", ignoreCase = true)
+    }
+
+    private fun isTransientHttpOrMessage(httpCode: Int, msg: String): Boolean {
+        if (httpCode == 429 || httpCode == 408 || httpCode >= 500) return true
+        return msg.contains("too many", ignoreCase = true) ||
+            msg.contains("temporarily unavailable", ignoreCase = true) ||
+            msg.contains("timeout", ignoreCase = true) ||
+            msg.contains("error code: 5", ignoreCase = true)
+    }
+
+    private fun JsonObject.getStringOrNull(memberName: String): String? {
+        val elem = get(memberName) ?: return null
+        if (elem.isJsonNull || !elem.isJsonPrimitive) return null
+        return elem.asString
+    }
+
+    private fun JsonObject.getIntOrNull(memberName: String): Int? {
+        val elem = get(memberName) ?: return null
+        if (elem.isJsonNull || !elem.isJsonPrimitive) return null
+        return try {
+            elem.asInt
+        } catch (_: NumberFormatException) {
+            null
+        }
+    }
+
+    private fun JsonObject.getLongOrNull(memberName: String): Long? {
+        val elem = get(memberName) ?: return null
+        if (elem.isJsonNull || !elem.isJsonPrimitive) return null
+        return try {
+            elem.asLong
+        } catch (_: NumberFormatException) {
+            null
+        }
+    }
+
+    private fun JsonObject.getBooleanOrNull(memberName: String): Boolean? {
+        val elem = get(memberName) ?: return null
+        if (elem.isJsonNull || !elem.isJsonPrimitive) return null
+        val prim = elem.asJsonPrimitive
+        return when {
+            prim.isBoolean -> prim.asBoolean
+            prim.isNumber -> prim.asInt != 0
+            prim.isString -> prim.asString.equals("true", ignoreCase = true) || prim.asString == "1"
+            else -> null
+        }
+    }
 }

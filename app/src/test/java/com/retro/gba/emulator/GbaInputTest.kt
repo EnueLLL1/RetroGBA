@@ -59,4 +59,43 @@ class GbaInputTest {
         buttons = buttons or GbaInput.BUTTON_B
         assertEquals(GbaInput.ALL_RELEASED, buttons)
     }
+
+    @Test
+    fun testActiveHighAndActiveLowConversions() {
+        assertEquals(0x0000, GbaInput.ALL_RELEASED_ACTIVE_HIGH)
+        assertEquals(GbaInput.ALL_RELEASED_ACTIVE_HIGH, GbaInput.toActiveHighMask(GbaInput.ALL_RELEASED))
+        assertEquals(GbaInput.ALL_RELEASED, GbaInput.toActiveLowMask(GbaInput.ALL_RELEASED_ACTIVE_HIGH))
+
+        val highAB = GbaInput.BUTTON_A or GbaInput.BUTTON_B
+        val expectedLowAB = GbaInput.ALL_RELEASED and highAB.inv()
+        assertEquals(expectedLowAB, GbaInput.toActiveLowMask(highAB))
+        assertEquals(highAB, GbaInput.toActiveHighMask(expectedLowAB))
+
+        // Bits acima do bit 9 (0x03FF) devem ser mascarados com segurança
+        assertEquals(GbaInput.BUTTON_L, GbaInput.toActiveHighMask(0xFFFF and GbaInput.BUTTON_L.inv()))
+        assertEquals(0x0000, GbaInput.toActiveLowMask(0xFFFF))
+    }
+
+    @Test
+    fun testPressAndReleaseActiveLowHelpers() {
+        var state = GbaInput.ALL_RELEASED
+
+        state = GbaInput.pressActiveLow(state, GbaInput.BUTTON_A)
+        assertEquals(GbaInput.BUTTON_A, GbaInput.toActiveHighMask(state))
+
+        state = GbaInput.pressActiveLow(state, GbaInput.BUTTON_R or GbaInput.BUTTON_UP)
+        assertEquals(
+            GbaInput.BUTTON_A or GbaInput.BUTTON_R or GbaInput.BUTTON_UP,
+            GbaInput.toActiveHighMask(state)
+        )
+
+        state = GbaInput.releaseActiveLow(state, GbaInput.BUTTON_A)
+        assertEquals(
+            GbaInput.BUTTON_R or GbaInput.BUTTON_UP,
+            GbaInput.toActiveHighMask(state)
+        )
+
+        state = GbaInput.releaseActiveLow(state, GbaInput.BUTTON_R or GbaInput.BUTTON_UP)
+        assertEquals(GbaInput.ALL_RELEASED, state)
+    }
 }

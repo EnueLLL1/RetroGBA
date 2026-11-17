@@ -12,6 +12,17 @@ object GbaInput {
     const val BUTTON_R      = 1 shl 8
     const val BUTTON_L      = 1 shl 9
 
-    const val ALL_RELEASED  = 0x03FF
+    const val ALL_RELEASED             = 0x03FF
+    const val ALL_RELEASED_ACTIVE_HIGH = 0x0000
+
+    fun toActiveHighMask(activeLowMask: Int): Int = (activeLowMask.inv()) and 0x03FF
+
+    fun toActiveLowMask(activeHighMask: Int): Int = (activeHighMask.inv()) and 0x03FF
+
+    fun pressActiveLow(currentActiveLow: Int, buttonMask: Int): Int =
+        (currentActiveLow and buttonMask.inv()) and 0x03FF
+
+    fun releaseActiveLow(currentActiveLow: Int, buttonMask: Int): Int =
+        (currentActiveLow or buttonMask) and 0x03FF
 }
 

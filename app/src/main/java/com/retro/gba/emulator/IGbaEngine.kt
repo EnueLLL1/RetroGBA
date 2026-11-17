@@ -46,6 +46,34 @@ interface IGbaEngine {
     fun setButtonPressed(buttonMask: Int, pressed: Boolean)
 
     /**
+     * Atualiza todos os botões simultaneamente usando máscara active-high (1 = pressionado).
+     */
+    fun setButtonsMask(activeHighMask: Int) {
+        val masked = activeHighMask and GbaInput.ALL_RELEASED
+        for (bit in 0..9) {
+            val buttonMask = 1 shl bit
+            setButtonPressed(buttonMask, (masked and buttonMask) != 0)
+        }
+    }
+
+    /**
+     * Solta todos os botões do controle GBA imediatamente.
+     */
+    fun resetAllButtons() {
+        setButtonsMask(GbaInput.ALL_RELEASED_ACTIVE_HIGH)
+    }
+
+    /**
+     * Ativa o script oficial de Rich Presence no runtime de conquistas.
+     */
+    fun activateRichPresence(script: String) {}
+
+    /**
+     * Avalia e retorna a string formatada atual de Rich Presence.
+     */
+    fun getRichPresence(): String = ""
+
+    /**
      * Ajusta multiplicador de velocidade (1.0x normal, >1.0x turbo).
      */
     fun setSpeedMultiplier(multiplier: Float)

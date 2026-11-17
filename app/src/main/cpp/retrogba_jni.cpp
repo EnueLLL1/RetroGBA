@@ -11,6 +11,7 @@
 
 // Headers do núcleo mGBA em C puro
 #include <mgba-util/vfs.h>
+#include <mgba/core/blip_buf.h>
 #include <mgba/core/cheats.h>
 #include <mgba/core/config.h>
 #include <mgba/core/core.h>
@@ -19,6 +20,7 @@
 #include <mgba/internal/gba/cheats.h>
 #include <mgba/internal/gba/gba.h>
 #include <mgba/internal/gba/memory.h>
+#include <mgba/internal/gba/savedata.h>
 
 // Headers da biblioteca oficial rcheevos (RetroAchievements em C)
 #include <rc_consoles.h>
@@ -47,38 +49,19 @@ static std::vector<uint32_t> s_triggeredAchievements;
 static uint32_t s_framebuffer[GBA_WIDTH * GBA_HEIGHT];
 static jobject s_directVideoBuffer = nullptr;
 
-// Buffer circular de áudio estéreo (PCM 16-bit estéreo)
-static constexpr size_t AUDIO_BUFFER_CAPACITY = 16384; // 16K samples
-static int16_t s_audioBuffer[AUDIO_BUFFER_CAPACITY];
-static std::atomic<size_t> s_audioWritePos{0};
-static std::atomic<size_t> s_audioReadPos{0};
-static unsigned s_audioSampleRate = 32768;
+static constexpr unsigned AUDIO_SAMPLE_RATE = 32768;
 
-static void audioRateChangedCb(struct mAVStream * /* stream */, unsigned rate) {
-  s_audioSampleRate = rate;
-  LOGI("mGBA taxa de amostragem de áudio alterada para %u Hz", rate);
+static void configureAudio() {
+  if (!s_core)
+    return;
+  s_core->setAudioBufferSize(s_core, 4096);
+  blip_t *left = s_core->getAudioChannel(s_core, 0);
+  blip_t *right = s_core->getAudioChannel(s_core, 1);
+  if (left)
+    blip_set_rates(left, s_core->frequency(s_core), AUDIO_SAMPLE_RATE);
+  if (right)
+    blip_set_rates(right, s_core->frequency(s_core), AUDIO_SAMPLE_RATE);
 }
-
-static void postAudioFrameCb(struct mAVStream * /* stream */, int16_t left,
-                             int16_t right) {
-  size_t writePos = s_audioWritePos.load(std::memory_order_relaxed);
-  size_t readPos = s_audioReadPos.load(std::memory_order_acquire);
-  size_t nextLeft = (writePos + 1) % AUDIO_BUFFER_CAPACITY;
-  size_t nextRight = (writePos + 2) % AUDIO_BUFFER_CAPACITY;
-  if (nextRight != readPos && nextLeft != readPos) {
-    s_audioBuffer[writePos] = left;
-    s_audioBuffer[nextLeft] = right;
-    s_audioWritePos.store(nextRight, std::memory_order_release);
-  }
-}
-
-static struct mAVStream s_avStream = {
-    nullptr, // videoDimensionsChanged
-    audioRateChangedCb,
-    nullptr, // postVideoFrame
-    postAudioFrameCb,
-    nullptr // postAudioBuffer
-};
 
 // Callback de leitura de memória do rcheevos com leitura direta via memcpy dos
 // bancos do GBA
@@ -118,11 +101,16 @@ static uint32_t rc_read_memory_cb(uint32_t address, uint8_t *buffer,
       bytes_read += to_read;
       num_bytes -= to_read;
     } else if (address < 0x058000) {
-      // SRAM / Save RAM (64KB): 0x048000 - 0x057FFF (no barramento: 0x0E000000)
+      // SRAM / Save RAM (janela rcheevos até 64KB): 0x048000 - 0x057FFF (no barramento: 0x0E000000)
       if (!gba->memory.savedata.data)
         break;
-      uint32_t offset = address - 0x048000;
-      uint32_t avail = 0x010000 - offset;
+      size_t sramSize = GBASavedataSize(&gba->memory.savedata);
+      uint32_t maxWindow = static_cast<uint32_t>(std::min<size_t>(sramSize, 0x010000u));
+      uint32_t offset = address - 0x048000u;
+      if (maxWindow == 0 || offset >= maxWindow) {
+        break;
+      }
+      uint32_t avail = maxWindow - offset;
       uint32_t to_read = (num_bytes < avail) ? num_bytes : avail;
       std::memcpy(buffer + bytes_read, gba->memory.savedata.data + offset,
                   to_read);
@@ -162,8 +150,10 @@ static void ensureRcInitialized() {
 
 // Cópia em memória da ROM carregada
 static std::vector<uint8_t> s_romData;
-static std::atomic<uint16_t> s_currentButtons{0};
+// Guarda máscara active-low do hardware GBA (0x03FF = todos os botões soltos)
+static std::atomic<uint16_t> s_currentButtons{0x03FFu};
 static bool s_isLoaded = false;
+static std::string s_activeRichPresenceScript;
 
 extern "C" {
 
@@ -203,14 +193,13 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeInit(JNIEnv * /* env */,
   s_core->setVideoBuffer(s_core, reinterpret_cast<color_t *>(s_framebuffer),
                          GBA_WIDTH);
 
-  // Conecta o pipeline de áudio estéreo
-  s_core->setAVStream(s_core, &s_avStream);
+  // Configura reamostragem nativa blip_buf do mGBA
+  configureAudio();
 
   std::memset(s_framebuffer, 0, sizeof(s_framebuffer));
-  s_audioWritePos.store(0, std::memory_order_relaxed);
-  s_audioReadPos.store(0, std::memory_order_relaxed);
-  s_currentButtons.store(0, std::memory_order_relaxed);
+  s_currentButtons.store(0x03FFu, std::memory_order_relaxed);
   s_isLoaded = false;
+  s_activeRichPresenceScript.clear();
 
   // Garante inicialização limpa do rcheevos
   if (s_rcInitialized) {
@@ -261,7 +250,6 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadRom(JNIEnv *env,
     }
     s_core->setVideoBuffer(s_core, reinterpret_cast<color_t *>(s_framebuffer),
                            GBA_WIDTH);
-    s_core->setAVStream(s_core, &s_avStream);
   } else if (s_isLoaded) {
     s_core->unloadROM(s_core);
     s_isLoaded = false;
@@ -300,15 +288,22 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadRom(JNIEnv *env,
   s_romData.shrink_to_fit();
 
   s_core->reset(s_core);
-  s_audioWritePos.store(0, std::memory_order_relaxed);
-  s_audioReadPos.store(0, std::memory_order_relaxed);
+  configureAudio();
+  s_currentButtons.store(0x03FFu, std::memory_order_relaxed);
   s_isLoaded = true;
 
   // Inicialização determinística do rcheevos mesmo sem chamada prévia de
   // nativeInit
+  if (s_rcInitialized) {
+    rc_runtime_destroy(&s_rcRuntime);
+    s_rcInitialized = false;
+  }
+  s_activeRichPresenceScript.clear();
   ensureRcInitialized();
-  rc_runtime_reset(&s_rcRuntime);
-  s_triggeredAchievements.clear();
+  {
+    std::lock_guard<std::mutex> achLock(s_achievementsMutex);
+    s_triggeredAchievements.clear();
+  }
 
   char title[13] = {0};
   s_core->getGameTitle(s_core, title);
@@ -323,8 +318,11 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeRunFrame(JNIEnv * /* env */,
   if (s_core == nullptr || !s_isLoaded)
     return;
 
-  // 1. Atualiza o estado dos botões antes do ciclo de frame da CPU
-  s_core->setKeys(s_core, s_currentButtons.load(std::memory_order_relaxed));
+  // 1. Atualiza o estado dos botões antes do ciclo de frame da CPU.
+  // s_currentButtons guarda active-low (0x03FF = tudo solto); mGBA exige active-high em setKeys().
+  uint16_t activeLow = s_currentButtons.load(std::memory_order_relaxed);
+  uint16_t activeHigh = static_cast<uint16_t>((0x03FFu ^ activeLow) & 0x03FFu);
+  s_core->setKeys(s_core, activeHigh);
 
   // 2. Executa as instruções da CPU ARM7TDMI, rasterização PPU e síntese APU
   // para 1 frame (1/60s)
@@ -372,33 +370,38 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeGetAudioSamples(
   if (buffer == nullptr || maxSamples <= 0)
     return 0;
 
+  std::lock_guard<std::mutex> lock(s_coreMutex);
+  if (s_core == nullptr || !s_isLoaded)
+    return 0;
+
+  blip_t *left = s_core->getAudioChannel(s_core, 0);
+  blip_t *right = s_core->getAudioChannel(s_core, 1);
+  if (left == nullptr || right == nullptr)
+    return 0;
+
   jsize len = env->GetArrayLength(buffer);
-  int toRead = std::min(static_cast<int>(len), static_cast<int>(maxSamples));
+  int maxFrames =
+      std::min({static_cast<int>(len), static_cast<int>(maxSamples), 4096}) / 2;
+  int avail = std::min(blip_samples_avail(left), maxFrames);
+  if (avail <= 0)
+    return 0;
 
   int16_t stackBuf[4096];
-  int chunk = std::min(toRead, 4096);
-  int copied = 0;
+  int produced = blip_read_samples(left, stackBuf, avail, 1);
+  blip_read_samples(right, stackBuf + 1, produced, 1);
 
-  size_t readPos = s_audioReadPos.load(std::memory_order_relaxed);
-  size_t writePos = s_audioWritePos.load(std::memory_order_acquire);
-
-  while (copied < chunk && readPos != writePos) {
-    stackBuf[copied++] = s_audioBuffer[readPos];
-    readPos = (readPos + 1) % AUDIO_BUFFER_CAPACITY;
-  }
-
-  if (copied > 0) {
-    s_audioReadPos.store(readPos, std::memory_order_release);
-    env->SetShortArrayRegion(buffer, 0, copied,
+  int totalShorts = produced * 2;
+  if (totalShorts > 0) {
+    env->SetShortArrayRegion(buffer, 0, totalShorts,
                              reinterpret_cast<const jshort *>(stackBuf));
   }
-  return copied;
+  return totalShorts;
 }
 
 JNIEXPORT jint JNICALL
 Java_com_retro_gba_emulator_NativeGbaEngine_nativeGetAudioSampleRate(
     JNIEnv * /* env */, jobject /* thiz */) {
-  return static_cast<jint>(s_audioSampleRate);
+  return static_cast<jint>(AUDIO_SAMPLE_RATE);
 }
 
 // Métodos de ativação e verificação de conquistas via rcheevos
@@ -411,8 +414,8 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeActivateAchievement(
     return JNI_FALSE;
 
   jsize strLen = env->GetStringLength(memaddr);
-  if (strLen == 0 || strLen > 4096) {
-    LOGE("rcheevos: Parâmetro memaddr inválido ou excede 4096 caracteres");
+  if (strLen <= 0 || strLen > 65536) {
+    LOGE("rcheevos: Parâmetro memaddr inválido ou excede 65536 caracteres");
     return JNI_FALSE;
   }
 
@@ -452,9 +455,73 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeClearAchievements(
     rc_runtime_destroy(&s_rcRuntime);
     s_rcInitialized = false;
   }
+  s_activeRichPresenceScript.clear();
   ensureRcInitialized();
   std::lock_guard<std::mutex> achLock(s_achievementsMutex);
   s_triggeredAchievements.clear();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_retro_gba_emulator_NativeGbaEngine_nativeActivateRichPresence(
+    JNIEnv *env, jobject /* thiz */, jstring script) {
+  std::lock_guard<std::mutex> lock(s_coreMutex);
+  ensureRcInitialized();
+  if (script == nullptr) {
+    return JNI_FALSE;
+  }
+
+  jsize strLen = env->GetStringLength(script);
+  if (strLen <= 0) {
+    if (!s_activeRichPresenceScript.empty()) {
+      rc_runtime_activate_richpresence(&s_rcRuntime, "", nullptr, 0);
+      s_activeRichPresenceScript.clear();
+    }
+    return JNI_FALSE;
+  }
+  if (strLen > 262144) {
+    LOGE("rcheevos: Script Rich Presence excede 262144 caracteres");
+    return JNI_FALSE;
+  }
+
+  const char *str = env->GetStringUTFChars(script, nullptr);
+  if (str == nullptr) {
+    return JNI_FALSE;
+  }
+
+  if (s_activeRichPresenceScript == str && s_rcRuntime.richpresence != nullptr) {
+    env->ReleaseStringUTFChars(script, str);
+    return JNI_TRUE;
+  }
+
+  int result = rc_runtime_activate_richpresence(&s_rcRuntime, str, nullptr, 0);
+  if (result == RC_OK) {
+    s_activeRichPresenceScript = str;
+    env->ReleaseStringUTFChars(script, str);
+    LOGI("rcheevos: Rich Presence ativado com sucesso.");
+    return JNI_TRUE;
+  }
+
+  env->ReleaseStringUTFChars(script, str);
+  LOGE("rcheevos: Erro ao ativar Rich Presence (código: %d)", result);
+  return JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_retro_gba_emulator_NativeGbaEngine_nativeGetRichPresence(
+    JNIEnv *env, jobject /* thiz */) {
+  std::lock_guard<std::mutex> lock(s_coreMutex);
+  if (!s_rcInitialized || s_core == nullptr || !s_isLoaded) {
+    return env->NewStringUTF("");
+  }
+
+  char buffer[512] = {0};
+  int len = rc_runtime_get_richpresence(&s_rcRuntime, buffer, sizeof(buffer),
+                                        rc_read_memory_cb, nullptr, nullptr);
+  if (len <= 0 || buffer[0] == '\0') {
+    return env->NewStringUTF("");
+  }
+  buffer[sizeof(buffer) - 1] = '\0';
+  return env->NewStringUTF(buffer);
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -572,6 +639,15 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeLoadState(
   if (!ok) {
     LOGE("mGBA rejeitou os dados do Save State");
     return JNI_FALSE;
+  }
+
+  // Reseta contadores/deltas do rcheevos ao restaurar estado para evitar falsos desbloqueios
+  if (s_rcInitialized) {
+    rc_runtime_reset(&s_rcRuntime);
+  }
+  {
+    std::lock_guard<std::mutex> achLock(s_achievementsMutex);
+    s_triggeredAchievements.clear();
   }
 
   LOGI("mGBA: Save State restaurado com sucesso (%d bytes).", len);
@@ -767,8 +843,9 @@ Java_com_retro_gba_emulator_NativeGbaEngine_nativeDestroy(JNIEnv *env,
   }
 
   s_romData.clear();
-  s_audioWritePos.store(0, std::memory_order_relaxed);
-  s_audioReadPos.store(0, std::memory_order_relaxed);
+  s_romData.shrink_to_fit();
+  s_currentButtons.store(0x03FFu, std::memory_order_relaxed);
+  s_activeRichPresenceScript.clear();
   s_isLoaded = false;
   LOGI("RetroGba: Núcleo mGBA, cheats e rcheevos destruídos com sucesso.");
 }
